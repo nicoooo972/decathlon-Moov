@@ -10,18 +10,25 @@
   import type { Route, RoutePoint } from '$lib/types';
   import { supabase } from '$lib/supabase';
   import L from 'leaflet';
+  import { getAllPOIs } from '$lib/services/poi';
+  import { fade } from 'svelte/transition';
   
   // État de la carte
   let map: L.Map;
   let userMarker: L.Marker;
   let routeMarkers: L.Marker[] = [];
   let routePolylines: L.Polyline[] = [];
+  let poiMarkers: L.Marker[] = [];
   let selectedRoute: Route | null = null;
   let selectedPoint: RoutePoint | null = null;
   let isLoading = true;
   let routes: Route[] = [];
   let userPosition: { lat: number; lng: number } | null = null;
   let watchId: number;
+  
+  // Filtres pour les POIs
+  let selectedFilter = '';
+  let showFilters = false;
   
   // Message de bienvenue pour les parents
   let showWelcomeMessage = true;
@@ -51,6 +58,9 @@
       
       // Charger les parcours
       await loadRoutes();
+      
+      // Charger les POIs
+      await loadPOIs();
       
       // Activer la géolocalisation
       startGeolocation();
@@ -468,6 +478,152 @@
       }
     }
   }
+  
+  async function loadPOIs(type?: string) {
+    try {
+      // Nettoyer les marqueurs de POI existants
+      clearPOIMarkers();
+      
+      // Charger les POIs depuis la base de données
+      const pois = await getAllPOIs(type);
+      
+      if (!pois.length) {
+        if (type) {
+          showNotification(`Aucun point d'intérêt de type "${type}" trouvé`, 'info');
+        }
+        return;
+      }
+      
+      // Créer des marqueurs pour chaque POI
+      pois.forEach(poi => {
+        const poiIcon = L.divIcon({
+          className: `poi-marker ${type ? 'poi-marker-' + type : ''}`,
+          html: `<div class="poi-marker-inner"></div>`,
+          iconSize: [24, 24]
+        });
+        
+        const marker = L.marker([poi.latitude, poi.longitude], {
+          icon: poiIcon,
+          title: poi.name
+        }).addTo(map);
+        
+        // Créer le contenu de la popup avec HTML
+        const poiPopup = L.popup({
+          maxWidth: 300,
+          className: 'custom-popup'
+        }).setContent(`
+          <div class="p-0 overflow-hidden">
+            <div class="relative">
+              <img src="${poi.image_url}" 
+                   alt="${poi.name}" 
+                   class="w-full h-36 object-cover"
+                   onerror="this.src='/placeholder.jpg'" />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+              <div class="absolute bottom-2 left-3 text-white">
+                <h3 class="text-xl font-bold">${poi.name}</h3>
+              </div>
+            </div>
+            
+            <div class="p-3">
+              <div class="flex items-center mb-3">
+                <span class="material-icons text-amber-500 mr-1 text-sm">star</span>
+                <span class="text-sm font-medium">4.5</span>
+                <span class="mx-2 text-gray-400">•</span>
+                <span class="text-sm text-gray-600">${poi.type || 'Point d\'intérêt'}</span>
+              </div>
+              
+              <p class="text-sm text-gray-700 mb-3">
+                ${poi.description}
+              </p>
+              
+              <div class="flex flex-col space-y-2">
+                <button id="details-button-${poi.id}" class="bg-[#0082C3] text-white py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
+                  <span class="material-icons mr-1 text-sm">info</span>
+                  Détails
+                </button>
+                <button id="directions-button-${poi.id}" class="border border-[#0082C3] text-[#0082C3] py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
+                  <span class="material-icons mr-1 text-sm">directions</span>
+                  Y aller
+                </button>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        // Ajouter la popup au marqueur
+        marker.bindPopup(poiPopup);
+        
+        // Ajouter des écouteurs d'événements après l'ouverture de la popup
+        marker.on('click', function() {
+          marker.openPopup();
+          
+          // Attendre que le popup soit ajouté au DOM
+          setTimeout(() => {
+            // Gérer le clic sur le bouton "Détails"
+            const detailsButton = document.getElementById(`details-button-${poi.id}`);
+            if (detailsButton) {
+              detailsButton.addEventListener('click', () => {
+                const lat = marker.getLatLng().lat;
+                const lng = marker.getLatLng().lng;
+                goto(`/poi/${lat},${lng}`);
+              });
+            }
+            
+            // Gérer le clic sur le bouton "Y aller"
+            const directionsButton = document.getElementById(`directions-button-${poi.id}`);
+            if (directionsButton) {
+              directionsButton.addEventListener('click', () => {
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      const userLat = position.coords.latitude;
+                      const userLng = position.coords.longitude;
+                      const url = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${marker.getLatLng().lat},${marker.getLatLng().lng}&travelmode=walking`;
+                      window.open(url, '_blank');
+                    },
+                    (error) => {
+                      alert('Impossible d\'obtenir votre position. Veuillez activer la géolocalisation.');
+                    }
+                  );
+                } else {
+                  alert('La géolocalisation n\'est pas prise en charge par votre navigateur.');
+                }
+              });
+            }
+          }, 100);
+        });
+        
+        poiMarkers.push(marker);
+      });
+      
+    } catch (error) {
+      console.error('Erreur lors du chargement des POIs:', error);
+      showNotification('Erreur lors du chargement des points d\'intérêt', 'error');
+    }
+  }
+  
+  function clearPOIMarkers() {
+    poiMarkers.forEach(marker => {
+      marker.remove();
+    });
+    poiMarkers = [];
+  }
+  
+  function toggleFilters() {
+    showFilters = !showFilters;
+  }
+  
+  function applyFilter(type: string) {
+    selectedFilter = type;
+    loadPOIs(type);
+    showFilters = false;
+  }
+  
+  function clearFilter() {
+    selectedFilter = '';
+    loadPOIs();
+    showFilters = false;
+  }
 </script>
 
 <svelte:head>
@@ -605,56 +761,272 @@
   :global(.location-button .material-icons) {
     font-size: 24px !important;
   }
+  
+  /* Styles pour les filtres */
+  .map-controls {
+    position: absolute;
+    top: 80px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1000;
+  }
+  
+  .control-button {
+    width: 40px;
+    height: 40px;
+    background-color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .control-button:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .control-button.active {
+    background-color: #0082C3;
+    color: white;
+  }
+  
+  .filter-panel {
+    position: absolute;
+    top: 80px;
+    right: 60px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    width: 250px;
+    z-index: 1000;
+    overflow: hidden;
+  }
+  
+  .filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .filter-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  
+  .close-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+  }
+  
+  .filter-options {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .filter-option {
+    padding: 10px 12px;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .filter-option:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .filter-option.active {
+    background-color: #e6f3fa;
+    color: #0082C3;
+    font-weight: 500;
+  }
+  
+  /* Styles pour le message de bienvenue */
+  .welcome-message {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 400px;
+    z-index: 1000;
+    overflow: hidden;
+  }
+  
+  .welcome-content {
+    padding: 16px;
+    position: relative;
+  }
+  
+  .close-welcome {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+  }
+  
+  .welcome-content h3 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #0082C3;
+  }
+  
+  .welcome-content p {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    color: #333;
+  }
+  
+  .welcome-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  
+  .inline-icon {
+    font-size: 16px;
+    vertical-align: middle;
+  }
+  
+  /* Styles pour les marqueurs de POI */
+  :global(.poi-marker) {
+    width: 24px !important;
+    height: 24px !important;
+  }
+  
+  :global(.poi-marker-inner) {
+    width: 100%;
+    height: 100%;
+    background-color: #0082C3;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  
+  :global(.poi-marker-childrens_park .poi-marker-inner) {
+    background-color: #4CAF50;
+  }
+  
+  /* Styles pour la popup */
+  :global(.custom-popup .leaflet-popup-content-wrapper) {
+    padding: 0;
+    overflow: hidden;
+    border-radius: 8px;
+  }
+  
+  :global(.custom-popup .leaflet-popup-content) {
+    margin: 0;
+    width: 280px !important;
+  }
+  
+  :global(.custom-popup .leaflet-popup-tip) {
+    background-color: white;
+  }
 </style>
 
 <div class="map-container">
   {#if isLoading}
-    <div class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-50">
+    <div class="loading-overlay">
       <Loading size="lg" />
-    </div>
-  {/if}
-  
-  <!-- Message de bienvenue pour les parents -->
-  {#if showWelcomeMessage}
-    <div class="absolute top-4 left-0 right-0 mx-auto z-50 max-w-md px-4">
-      <div class="bg-white rounded-lg shadow-lg p-4 flex items-start">
-        <div class="flex-1">
-          <h3 class="font-bold text-gray-800 mb-1">
-            {userName ? `Bonjour ${userName} !` : 'Bonjour !'}
-          </h3>
-          <p class="text-sm text-gray-600">
-            Bienvenue sur Moov ! Explorez la carte pour découvrir des parcours adaptés à votre famille.
-          </p>
-        </div>
-        <button 
-          class="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" 
-          on:click={closeWelcomeMessage}
-          aria-label="Fermer"
-        >
-          <span class="material-icons">close</span>
-        </button>
-      </div>
     </div>
   {/if}
   
   <div id="map"></div>
   
+  <!-- Boutons de contrôle -->
   <div class="map-controls">
     <button 
-      on:click={centerOnUser} 
-      class="location-button"
-      aria-label="Centrer sur ma position"
+      class="control-button" 
+      on:click={centerOnUser}
+      title="Centrer sur ma position"
     >
       <span class="material-icons">my_location</span>
     </button>
+    
+    <button 
+      class="control-button {selectedFilter ? 'active' : ''}" 
+      on:click={toggleFilters}
+      title="Filtrer les points d'intérêt"
+    >
+      <span class="material-icons">filter_list</span>
+    </button>
   </div>
   
+  <!-- Panneau de filtres -->
+  {#if showFilters}
+    <div class="filter-panel" transition:fade={{ duration: 200 }}>
+      <div class="filter-header">
+        <h3>Filtrer par type</h3>
+        <button on:click={toggleFilters} class="close-button">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      
+      <div class="filter-options">
+        <button 
+          class="filter-option {selectedFilter === '' ? 'active' : ''}"
+          on:click={clearFilter}
+        >
+          Tous les points d'intérêt
+        </button>
+        
+        <button 
+          class="filter-option {selectedFilter === 'childrens_park' ? 'active' : ''}"
+          on:click={() => applyFilter('childrens_park')}
+        >
+          Parcs pour enfants
+        </button>
+      </div>
+    </div>
+  {/if}
+  
+  <!-- Message de bienvenue pour les parents -->
+  {#if showWelcomeMessage}
+    <div class="welcome-message" transition:fade={{ duration: 300 }}>
+      <div class="welcome-content">
+        <button class="close-welcome" on:click={closeWelcomeMessage}>
+          <span class="material-icons">close</span>
+        </button>
+        
+        <h3>Bonjour {userName || 'parent explorateur'} !</h3>
+        <p>Découvrez des parcs pour enfants à proximité en utilisant le filtre <span class="material-icons inline-icon">filter_list</span>.</p>
+        
+        <div class="welcome-actions">
+          <Button variant="primary" size="sm" on:click={closeWelcomeMessage}>
+            C'est parti !
+          </Button>
+        </div>
+      </div>
+    </div>
+  {/if}
+  
+  <!-- Détails du point sélectionné -->
   {#if selectedPoint}
-    <div class="point-detail-container">
+    <div class="point-detail-container" transition:fade={{ duration: 200 }}>
       <RoutePointDetail 
         point={selectedPoint} 
-        route={selectedRoute} 
-        onClose={closePointDetail} 
+        onClose={closePointDetail}
       />
     </div>
   {/if}

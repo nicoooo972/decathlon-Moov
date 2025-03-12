@@ -2,10 +2,17 @@ import { supabase } from '$lib/supabase';
 import type { RoutePoint, Product } from '$lib/types';
 
 // Récupérer tous les points d'intérêt
-export async function getAllPOIs() {
-  const { data, error } = await supabase
+export async function getAllPOIs(type?: string) {
+  let query = supabase
     .from('points_of_interest')
     .select('*');
+  
+  // Si un type est spécifié, filtrer par ce type
+  if (type) {
+    query = query.eq('type', type);
+  }
+  
+  const { data, error } = await query;
   
   if (error) {
     console.error('Erreur lors de la récupération des points d\'intérêt:', error);
@@ -319,4 +326,21 @@ export async function deletePOI(poiId: number) {
   }
   
   return true;
+}
+
+// Récupérer les types de POI disponibles
+export async function getPOITypes() {
+  const { data, error } = await supabase
+    .from('points_of_interest')
+    .select('type')
+    .not('type', 'is', null);
+  
+  if (error) {
+    console.error('Erreur lors de la récupération des types de POI:', error);
+    return [];
+  }
+  
+  // Extraire les types uniques
+  const types = data.map(item => item.type);
+  return [...new Set(types)].filter(Boolean);
 } 

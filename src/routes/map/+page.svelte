@@ -23,24 +23,42 @@
   let userPosition: { lat: number; lng: number } | null = null;
   let watchId: number;
   
-  onMount(async () => {
-    if (!$currentUser) {
-      goto('/login');
-      return;
-    }
+  // Message de bienvenue pour les parents
+  let showWelcomeMessage = true;
+  let userName = '';
+  
+  function closeWelcomeMessage() {
+    showWelcomeMessage = false;
+  }
+  
+  onMount(() => {
+    const initialize = async () => {
+      if (!$currentUser) {
+        goto('/login');
+        return;
+      }
+      
+      // Récupérer le nom de l'utilisateur pour le message de bienvenue
+      if ($currentUser.first_name) {
+        userName = $currentUser.first_name;
+      }
+      
+      // Ajouter la classe au body pour empêcher le défilement
+      document.body.classList.add('map-page');
+      
+      // Initialiser la carte
+      await initMap();
+      
+      // Charger les parcours
+      await loadRoutes();
+      
+      // Activer la géolocalisation
+      startGeolocation();
+    };
     
-    // Ajouter la classe au body pour empêcher le défilement
-    document.body.classList.add('map-page');
+    initialize();
     
-    // Initialiser la carte
-    await initMap();
-    
-    // Charger les parcours
-    await loadRoutes();
-    
-    // Activer la géolocalisation
-    startGeolocation();
-    
+    // Fonction de nettoyage
     return () => {
       // Nettoyer la géolocalisation à la destruction du composant
       if (browser && watchId) {
@@ -52,10 +70,8 @@
         map.remove();
       }
       
-      // Supprimer la classe du body
-      document.body.classList.remove('map-page');
-      
       // Réinitialiser les styles du body
+      document.body.classList.remove('map-page');
       document.body.style.overflow = '';
       document.body.style.position = '';
       document.body.style.width = '';
@@ -595,6 +611,29 @@
   {#if isLoading}
     <div class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-50">
       <Loading size="lg" />
+    </div>
+  {/if}
+  
+  <!-- Message de bienvenue pour les parents -->
+  {#if showWelcomeMessage}
+    <div class="absolute top-4 left-0 right-0 mx-auto z-50 max-w-md px-4">
+      <div class="bg-white rounded-lg shadow-lg p-4 flex items-start">
+        <div class="flex-1">
+          <h3 class="font-bold text-gray-800 mb-1">
+            {userName ? `Bonjour ${userName} !` : 'Bonjour !'}
+          </h3>
+          <p class="text-sm text-gray-600">
+            Bienvenue sur Moov ! Explorez la carte pour découvrir des parcours adaptés à votre famille.
+          </p>
+        </div>
+        <button 
+          class="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" 
+          on:click={closeWelcomeMessage}
+          aria-label="Fermer"
+        >
+          <span class="material-icons">close</span>
+        </button>
+      </div>
     </div>
   {/if}
   

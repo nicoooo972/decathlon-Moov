@@ -6,6 +6,8 @@
   import Input from '$lib/components/ui/input.svelte';
   import Loading from '$lib/components/ui/loading.svelte';
   import { isLoading } from '$lib/stores/app-store';
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   
   let isLoginMode = true;
   let email = '';
@@ -16,6 +18,35 @@
     password: '',
     confirmPassword: ''
   };
+  
+  // Vérifier si on est dans une boucle de redirection
+  onMount(() => {
+    if (browser) {
+      // Vérifier si on vient d'être redirigé
+      const redirectCount = parseInt(sessionStorage.getItem('redirectCount') || '0', 10);
+      
+      if (redirectCount > 5) {
+        // Réinitialiser le compteur et afficher un message
+        sessionStorage.setItem('redirectCount', '0');
+        showNotification('Trop de redirections détectées. Veuillez réessayer.', 'error');
+      } else {
+        // Incrémenter le compteur
+        sessionStorage.setItem('redirectCount', (redirectCount + 1).toString());
+      }
+      
+      // Précharger les images pour éviter les erreurs 404
+      const imagesToPreload = [
+        '/logo.svg', 
+        '/decathlon-logo.svg',
+        '/placeholder.jpg'
+      ];
+      
+      imagesToPreload.forEach(src => {
+        const img = new Image();
+        img.src = src;
+      });
+    }
+  });
   
   function validateForm() {
     let isValid = true;
@@ -58,6 +89,11 @@
           const user = await signIn(email, password);
           showNotification('Connexion réussie', 'success');
           
+          // Réinitialiser le compteur de redirections
+          if (browser) {
+            sessionStorage.setItem('redirectCount', '0');
+          }
+          
           if (user && await hasUserPreferences(user.id)) {
             goto('/');
           } else {
@@ -68,6 +104,12 @@
         await withLoading(async () => {
           await signUp(email, password);
           showNotification('Inscription réussie ! Un email de confirmation vous a été envoyé.', 'success');
+          
+          // Réinitialiser le compteur de redirections
+          if (browser) {
+            sessionStorage.setItem('redirectCount', '0');
+          }
+          
           goto('/onboarding');
         });
       }
@@ -89,12 +131,12 @@
 </script>
 
 <svelte:head>
-  <title>{isLoginMode ? 'Connexion' : 'Inscription'} | Decathlon Urban Trek</title>
+  <title>{isLoginMode ? 'Connexion' : 'Inscription'} | Moov</title>
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
   <div class="sm:mx-auto sm:w-full sm:max-w-md">
-    <img class="mx-auto h-12 w-auto" src="/decathlon-logo.svg" alt="Decathlon" />
+    <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
     <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
       {isLoginMode ? 'Connectez-vous à votre compte' : 'Créez votre compte'}
     </h2>

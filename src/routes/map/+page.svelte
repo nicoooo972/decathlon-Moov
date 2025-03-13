@@ -628,6 +628,43 @@
     touchStartY = 0;
     touchEndY = 0;
   }
+  
+  // Calculer la distance entre deux points géographiques (en km)
+  function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
+    
+    const R = 6371; // Rayon de la Terre en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance en km
+    
+    return distance;
+  }
+  
+  // Démarrer la navigation vers un POI
+  function startNavigation(poi: ExtendedRoutePoint) {
+    if (!poi) return;
+    
+    // Pour l'instant, on affiche juste une notification
+    showNotification(`Navigation vers ${poi.name} démarrée`, 'success');
+    
+    // Fermer le panneau POI
+    clearSelectedPOI();
+    
+    // Centrer la carte sur le POI
+    if (map && poi.position) {
+      map.setCenter(poi.position);
+      map.setZoom(16);
+    }
+    
+    // TODO: Implémenter la navigation réelle
+    // Cette fonction sera complétée dans la prochaine étape
+  }
 </script>
 
 <svelte:head>
@@ -666,44 +703,6 @@
     {/if}
     
     <div bind:this={mapElement} class="w-full h-full"></div>
-    
-    <!-- Panneau latéral des itinéraires -->
-    <div class="absolute top-4 left-4 w-80 max-h-[calc(100%-32px)] bg-white rounded-lg shadow-lg overflow-hidden z-10">
-      <div class="p-4 bg-[#0082C3] text-white">
-        <h2 class="text-xl font-bold">Parcours disponibles</h2>
-      </div>
-      
-      <div class="overflow-y-auto max-h-[calc(100%-60px)]">
-        {#if routes.length === 0}
-          <div class="p-4 text-center text-gray-500">
-            {#if isLoadingRoutes}
-              Chargement des parcours...
-            {:else}
-              Aucun parcours disponible.
-            {/if}
-          </div>
-        {:else}
-          <div class="divide-y">
-            {#each routes as route}
-              <button 
-                class="w-full p-4 text-left hover:bg-gray-50 transition-colors flex items-start gap-3 {route.id === selectedRouteId ? 'bg-blue-50' : ''}"
-                on:click={() => handleRouteClick(route)}
-              >
-                <div class="flex-shrink-0 w-2 h-full rounded-full bg-[#0082C3]"></div>
-                <div>
-                  <h3 class="font-bold text-gray-900">{route.name}</h3>
-                  <div class="text-sm text-gray-600 mt-1">
-                    <span>{route.distance_km} km</span>
-                    <span class="mx-1">•</span>
-                    <span>{route.difficulty}</span>
-                  </div>
-                </div>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
     
     <!-- Détails de l'itinéraire sélectionné -->
     {#if selectedRoute && !selectedPOI}
@@ -767,13 +766,35 @@
         <!-- Version compacte (titre et boutons uniquement) -->
         {#if !isPOIExpanded}
           <div class="p-5">
-            <div class="flex items-start pt-2">
-              <div>
+            <div class="flex items-start gap-3">
+              <!-- Image miniature du POI -->
+              {#if selectedPOI.image_url}
+                <div class="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden">
+                  <img src={selectedPOI.image_url} alt={selectedPOI.name} class="w-full h-full object-cover">
+                </div>
+              {/if}
+              
+              <div class="flex-1 pt-2">
                 <h2 class="text-xl font-medium text-gray-900">{selectedPOI.name}</h2>
                 
                 {#if selectedPOI.opening_hours}
                   <div class="text-green-600 font-medium text-sm mt-1">
                     {selectedPOI.opening_hours}
+                  </div>
+                {/if}
+                
+                <!-- Distance par rapport à la position actuelle -->
+                {#if userMarker && selectedPOI.position}
+                  <div class="flex items-center text-blue-600 mt-1">
+                    <span class="material-icons text-sm mr-1">directions_walk</span>
+                    <span class="text-sm font-medium">
+                      {calculateDistance(
+                        userMarker.getPosition()?.lat() || 0,
+                        userMarker.getPosition()?.lng() || 0,
+                        selectedPOI.position.lat,
+                        selectedPOI.position.lng
+                      ).toFixed(1)} km
+                    </span>
                   </div>
                 {/if}
               </div>
@@ -801,6 +822,29 @@
                   {selectedPOI.opening_hours}
                 </div>
               {/if}
+              
+              <!-- Distance par rapport à la position actuelle -->
+              {#if userMarker && selectedPOI.position}
+                <div class="flex items-center text-blue-600 mb-3">
+                  <span class="material-icons text-sm mr-1">directions_walk</span>
+                  <span class="text-sm font-medium">
+                    {calculateDistance(
+                      userMarker.getPosition()?.lat() || 0,
+                      userMarker.getPosition()?.lng() || 0,
+                      selectedPOI.position.lat,
+                      selectedPOI.position.lng
+                    ).toFixed(1)} km de votre position
+                  </span>
+                </div>
+              {/if}
+              
+              <!-- Bouton "Allons-y" -->
+              <button 
+                class="w-full bg-[#0082C3] text-white py-3 mb-4 font-medium text-center"
+                on:click={() => selectedPOI && startNavigation(selectedPOI)}
+              >
+                Allons-y
+              </button>
               
               <!-- Badges d'information -->
               {#if selectedPOI.route_name}

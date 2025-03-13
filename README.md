@@ -1,15 +1,3 @@
-# Decathlon Urban Trek - Application PWA
-
-Une application Progressive Web App (PWA) pour Decathlon permettant aux parents et enfants de faire des balades urbaines en suivant des parcours personnalisés avec des histoires et des activités.
-
-## Fonctionnalités
-
-- **Authentification** : Inscription et connexion des utilisateurs via Supabase Auth
-- **Personnalisation** : Questionnaire pour personnaliser l'expérience (préférences d'activités, tranches d'âge, etc.)
-- **Parcours** : Découverte de parcours adaptés aux préférences de l'utilisateur
-- **Mode hors ligne** : Fonctionnalité PWA permettant d'utiliser l'application sans connexion internet
-- **Installation** : Possibilité d'installer l'application sur l'écran d'accueil des appareils mobiles
-
 ## Technologies utilisées
 
 - **Frontend** : SvelteKit, Tailwind CSS

@@ -1,1135 +1,914 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { currentUser } from '$lib/services/auth';
-  import { browser } from '$app/environment';
+  import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { showNotification } from '$lib/stores/app-store';
-  import Button from '$lib/components/ui/button.svelte';
-  import Loading from '$lib/components/ui/loading.svelte';
-  import RoutePointDetail from '$lib/components/map/RoutePointDetail.svelte';
+  import { currentUser } from '$lib/services/auth';
+  import { getAllRoutes, getRouteById } from '$lib/services/routes';
+  import { getAllPOIs, getFullPOIData } from '$lib/services/poi';
+  import { withLoading, showNotification } from '$lib/stores/app-store';
+  import { browser } from '$app/environment';
   import type { Route, RoutePoint } from '$lib/types';
-  import { supabase } from '$lib/supabase';
-  import L from 'leaflet';
-  import { getAllPOIs } from '$lib/services/poi';
-  import { fade } from 'svelte/transition';
   
-  // État de la carte
-  let map: L.Map;
-  let userMarker: L.Marker;
-  let routeMarkers: L.Marker[] = [];
-  let routePolylines: L.Polyline[] = [];
-  let poiMarkers: L.Marker[] = [];
+  // Interface étendue pour les POIs avec des propriétés supplémentaires
+  interface ExtendedRoutePoint extends RoutePoint {
+    route_name?: string;
+    route_id?: number;
+    is_route_start?: boolean;
+    distance_km?: number;
+    difficulty?: string;
+  }
+  
+  let mapElement: HTMLDivElement;
+  let map: google.maps.Map | null = null;
+  let userMarker: google.maps.Marker | null = null;
+  let routeMarkers: google.maps.Marker[] = [];
+  let poiMarkers: google.maps.Marker[] = [];
+  let routePaths: google.maps.Polyline[] = [];
+  let infoWindows: google.maps.InfoWindow[] = [];
   let selectedRoute: Route | null = null;
-  let selectedPoint: RoutePoint | null = null;
-  let isLoading = true;
+  let selectedRouteId: number | null = null;
+  let selectedPOI: ExtendedRoutePoint | null = null;
   let routes: Route[] = [];
-  let userPosition: { lat: number; lng: number } | null = null;
-  let watchId: number;
+  let pois: RoutePoint[] = [];
+  let watchId: number | null = null;
+  let mapError: string | null = null;
+  let isLoadingRoutes: boolean = false;
+  let isPOIExpanded: boolean = false; // État d'expansion du panneau POI
+  let touchStartY: number = 0;
+  let touchEndY: number = 0;
+  let poiPanelElement: HTMLDivElement;
   
-  // Filtres pour les POIs
-  let selectedFilter = '';
-  let showFilters = false;
-  
-  // Message de bienvenue pour les parents
-  let showWelcomeMessage = true;
-  let userName = '';
-  
-  function closeWelcomeMessage() {
-    showWelcomeMessage = false;
+  // Récupérer l'ID de l'itinéraire depuis les paramètres d'URL
+  $: {
+    const routeParam = $page.url.searchParams.get('route');
+    if (routeParam) {
+      selectedRouteId = parseInt(routeParam);
+      if (!isNaN(selectedRouteId)) {
+        loadSelectedRoute(selectedRouteId);
+      }
+    }
   }
   
   onMount(() => {
-    const initialize = async () => {
-      if (!$currentUser) {
-        goto('/login');
-        return;
-      }
-      
-      // Récupérer le nom de l'utilisateur pour le message de bienvenue
-      if ($currentUser.first_name) {
-        userName = $currentUser.first_name;
-      }
-      
-      // Ajouter la classe au body pour empêcher le défilement
-      document.body.classList.add('map-page');
-      
-      // Initialiser la carte
-      await initMap();
-      
-      // Charger les parcours
-      await loadRoutes();
-      
-      // Charger les POIs
-      await loadPOIs();
-      
-      // Activer la géolocalisation
-      startGeolocation();
-    };
+    if (!browser) return;
     
-    initialize();
+    // Vérifier si l'utilisateur est connecté
+    if (!$currentUser) {
+      goto('/login');
+      return;
+    }
+    
+    // Désactiver le scroll sur le body quand on est sur la page carte
+    document.body.style.overflow = 'hidden';
+    
+    // Initialiser la carte de manière asynchrone
+    initializeMap();
     
     // Fonction de nettoyage
     return () => {
-      // Nettoyer la géolocalisation à la destruction du composant
-      if (browser && watchId) {
+      // Réactiver le scroll sur le body quand on quitte la page
+      document.body.style.overflow = '';
+      
+      // Nettoyer les ressources
+      if (watchId) {
         navigator.geolocation.clearWatch(watchId);
       }
       
-      // Nettoyer la carte
-      if (map) {
-        map.remove();
-      }
-      
-      // Réinitialiser les styles du body
-      document.body.classList.remove('map-page');
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-      document.body.style.height = '';
+      // Supprimer les marqueurs
+      if (userMarker) userMarker.setMap(null);
+      routeMarkers.forEach(marker => marker.setMap(null));
+      poiMarkers.forEach(marker => marker.setMap(null));
+      routePaths.forEach(path => path.setMap(null));
+      infoWindows.forEach(window => window.close());
     };
   });
   
-  async function initMap() {
-    if (!browser) return;
-    
-    // Position par défaut (Paris)
-    const defaultPosition = { lat: 48.8566, lng: 2.3522 };
-    
-    // Créer la carte
-    const mapElement = document.getElementById('map');
-    if (!mapElement) return;
-    
-    // S'assurer que les styles Leaflet sont chargés
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-      link.crossOrigin = '';
-      document.head.appendChild(link);
-    }
-    
-    // Fixer le body pour empêcher le défilement de la page
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
-    document.body.style.height = '100%';
-    
-    // Initialiser la carte Leaflet avec toutes les options de déplacement activées
-    map = L.map('map', {
-      dragging: true,
-      scrollWheelZoom: true,
-      touchZoom: true,
-      zoomControl: true,
-      doubleClickZoom: true,
-      boxZoom: true,
-      keyboard: true
-    }).setView([defaultPosition.lat, defaultPosition.lng], 14);
-    
-    // Ajouter les tuiles OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19
-    }).addTo(map);
-    
-    // Créer le marqueur utilisateur (invisible au début)
-    const userIcon = L.divIcon({
-      className: 'user-marker',
-      html: '<div class="user-marker-inner"></div>',
-      iconSize: [20, 20]
-    });
-    
-    userMarker = L.marker([defaultPosition.lat, defaultPosition.lng], {
-      icon: userIcon,
-      opacity: 0
-    }).addTo(map);
-    
-    // Ajouter un marqueur pour la Tour Eiffel
-    const tourEiffelPosition = { lat: 48.8584, lng: 2.2945 };
-    const tourEiffelIcon = L.divIcon({
-      className: 'poi-marker',
-      html: '<div class="poi-marker-inner"></div>',
-      iconSize: [24, 24]
-    });
-    
-    const tourEiffelMarker = L.marker([tourEiffelPosition.lat, tourEiffelPosition.lng], {
-      icon: tourEiffelIcon,
-      title: 'Tour Eiffel'
-    }).addTo(map);
-    
-    // Créer le contenu de la popup avec HTML
-    const eiffelTowerPopup = L.popup({
-      maxWidth: 300,
-      className: 'custom-popup'
-    }).setContent(`
-      <div class="p-0 overflow-hidden">
-        <div class="relative">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg/800px-Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg" 
-               alt="Tour Eiffel" 
-               class="w-full h-36 object-cover" />
-          <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-          <div class="absolute bottom-2 left-3 text-white">
-            <h3 class="text-xl font-bold">Tour Eiffel</h3>
-          </div>
-        </div>
-        
-        <div class="p-3">
-          <div class="flex items-center mb-3">
-            <span class="material-icons text-amber-500 mr-1 text-sm">star</span>
-            <span class="text-sm font-medium">4.7</span>
-            <span class="mx-2 text-gray-400">•</span>
-            <span class="text-sm text-gray-600">Monument historique</span>
-          </div>
-          
-          <p class="text-sm text-gray-700 mb-3">
-            Symbole de Paris et de la France, cette tour en fer de 330m offre une vue panoramique exceptionnelle.
-          </p>
-          
-          <div class="flex flex-col space-y-2">
-            <button id="details-button" class="bg-[#0082C3] text-white py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
-              <span class="material-icons mr-1 text-sm">info</span>
-              Détails
-            </button>
-            <button id="directions-button" class="border border-[#0082C3] text-[#0082C3] py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
-              <span class="material-icons mr-1 text-sm">directions</span>
-              Y aller
-            </button>
-          </div>
-        </div>
-      </div>
-    `);
-    
-    // Ajouter la popup au marqueur
-    tourEiffelMarker.bindPopup(eiffelTowerPopup);
-    
-    // Ajouter des écouteurs d'événements après l'ouverture de la popup
-    tourEiffelMarker.on('click', function() {
-      tourEiffelMarker.openPopup();
+  async function initializeMap() {
+    try {
+      // Attendre que l'API Google Maps soit chargée
+      if (typeof google === 'undefined') {
+        mapError = "L'API Google Maps n'est pas chargée. Veuillez vérifier votre connexion internet.";
+        return;
+      }
       
-      // Attendre que le popup soit ajouté au DOM
-      setTimeout(() => {
-        // Gérer le clic sur le bouton "Détails"
-        const detailsButton = document.getElementById('details-button');
-        if (detailsButton) {
-          detailsButton.addEventListener('click', () => {
-            // Utiliser goto au lieu de window.location.href pour préserver la session
-            const lat = tourEiffelMarker.getLatLng().lat;
-            const lng = tourEiffelMarker.getLatLng().lng;
-            goto(`/poi/${lat},${lng}`);
-          });
+      // Initialiser la carte
+      initMap();
+      
+      // Charger les itinéraires
+      await loadRoutes();
+      
+      // Charger les points d'intérêt
+      await loadPOIs();
+      
+      // Démarrer le suivi de position
+      startPositionTracking();
+    } catch (error) {
+      console.error('Erreur lors de l\'initialisation de la carte:', error);
+      if (error instanceof Error) {
+        mapError = `Erreur: ${error.message}`;
+      } else {
+        mapError = "Une erreur s'est produite lors du chargement de la carte.";
+      }
+    }
+  }
+  
+  function initMap() {
+    // Options de la carte
+    const mapOptions = {
+      zoom: 13,
+      center: { lat: 48.8566, lng: 2.3522 }, // Paris par défaut
+      mapTypeId: google.maps.MapTypeId.ROADMAP,
+      zoomControl: true,
+      mapTypeControl: true,
+      scaleControl: true,
+      streetViewControl: false,
+      rotateControl: false,
+      fullscreenControl: true,
+      clickableIcons: false, // Désactiver les POIs natifs de Google Maps
+      styles: [
+        {
+          featureType: "poi",
+          elementType: "labels",
+          stylers: [{ visibility: "off" }]
         }
-        
-        // Gérer le clic sur le bouton "Y aller"
-        const directionsButton = document.getElementById('directions-button');
-        if (directionsButton) {
-          directionsButton.addEventListener('click', () => {
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition(
-                (position) => {
-                  const userLat = position.coords.latitude;
-                  const userLng = position.coords.longitude;
-                  const url = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${tourEiffelMarker.getLatLng().lat},${tourEiffelMarker.getLatLng().lng}&travelmode=walking`;
-                  window.open(url, '_blank');
-                },
-                (error) => {
-                  alert('Impossible d\'obtenir votre position. Veuillez activer la géolocalisation.');
-                }
-              );
-            } else {
-              alert('La géolocalisation n\'est pas prise en charge par votre navigateur.');
-            }
-          });
+      ]
+    };
+    
+    try {
+      // Créer la carte
+      map = new google.maps.Map(mapElement, mapOptions);
+      
+      // Ajouter un bouton pour recentrer sur la position
+      const centerControlDiv = document.createElement('div');
+      const centerControl = createCenterControl();
+      centerControlDiv.appendChild(centerControl);
+      map.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(centerControlDiv);
+      
+      // Ajouter une légende à la carte
+      const legendDiv = createLegendControl();
+      map.controls[google.maps.ControlPosition.LEFT_BOTTOM].push(legendDiv);
+      
+      // Ajouter un gestionnaire de clic sur la carte pour fermer le panneau POI
+      map.addListener('click', () => {
+        if (selectedPOI) {
+          clearSelectedPOI();
         }
-      }, 100);
+      });
+    } catch (error) {
+      console.error('Erreur lors de la création de la carte:', error);
+      if (error instanceof Error) {
+        mapError = `Erreur: ${error.message}`;
+      } else {
+        mapError = "Une erreur s'est produite lors de la création de la carte.";
+      }
+    }
+  }
+  
+  function createCenterControl() {
+    const controlButton = document.createElement('button');
+    controlButton.style.backgroundColor = '#fff';
+    controlButton.style.border = '2px solid #fff';
+    controlButton.style.borderRadius = '50%';
+    controlButton.style.boxShadow = '0 2px 6px rgba(0,0,0,.3)';
+    controlButton.style.cursor = 'pointer';
+    controlButton.style.marginRight = '10px';
+    controlButton.style.marginBottom = '10px';
+    controlButton.style.textAlign = 'center';
+    controlButton.style.width = '40px';
+    controlButton.style.height = '40px';
+    controlButton.style.display = 'flex';
+    controlButton.style.justifyContent = 'center';
+    controlButton.style.alignItems = 'center';
+    controlButton.title = 'Centrer sur ma position';
+    controlButton.innerHTML = '<span class="material-icons" style="color:#0082C3;">my_location</span>';
+    
+    controlButton.addEventListener('click', () => {
+      if (userMarker && map) {
+        map.setCenter(userMarker.getPosition()!);
+        map.setZoom(16);
+      }
     });
+    
+    return controlButton;
+  }
+  
+  function createLegendControl() {
+    const legendDiv = document.createElement('div');
+    legendDiv.className = 'bg-white p-3 m-3 rounded-lg shadow-lg';
+    legendDiv.style.maxWidth = '200px';
+    
+    legendDiv.innerHTML = `
+      <div class="text-sm font-bold mb-2">Légende</div>
+      <div class="flex items-center mb-2">
+        <div style="width: 16px; height: 16px; border-radius: 50%; background-color: #FF0000; margin-right: 8px;"></div>
+        <span class="text-xs">Votre position</span>
+      </div>
+      <div class="flex items-center mb-2">
+        <div style="width: 16px; height: 16px; border-radius: 50%; background-color: #0082C3; margin-right: 8px;"></div>
+        <span class="text-xs">Départ d'itinéraire</span>
+      </div>
+      <div class="flex items-center mb-2">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#0082C3" style="margin-right: 8px;">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>
+        <span class="text-xs">POI sur itinéraire</span>
+      </div>
+      <div class="flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FF5722" style="margin-right: 8px;">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>
+        <span class="text-xs">Point d'intérêt</span>
+      </div>
+    `;
+    
+    return legendDiv;
   }
   
   async function loadRoutes() {
     try {
-      const { data, error } = await supabase
-        .from('routes')
-        .select('*');
-      
-      if (error) throw error;
-      
-      if (data) {
-        routes = data;
+      isLoadingRoutes = true;
+      await withLoading(async () => {
+        routes = await getAllRoutes();
         displayRoutes();
-      }
-      
-      isLoading = false;
+      });
+      isLoadingRoutes = false;
     } catch (error) {
-      console.error('Erreur lors du chargement des parcours:', error);
-      showNotification('Erreur lors du chargement des parcours', 'error');
-      isLoading = false;
+      isLoadingRoutes = false;
+      console.error('Erreur lors du chargement des itinéraires:', error);
+      showNotification('Erreur lors du chargement des itinéraires', 'error');
     }
   }
   
-  function displayRoutes() {
-    if (!map || !routes.length) return;
-    
-    // Nettoyer les marqueurs et polylines existants
-    clearRouteDisplay();
-    
-    routes.forEach(route => {
-      // Créer un polyline pour le parcours
-      const path = [
-        [route.start_point.lat, route.start_point.lng],
-        ...route.waypoints.map(wp => [wp.lat, wp.lng]),
-        [route.end_point.lat, route.end_point.lng]
-      ];
-      
-      const polyline = L.polyline(path as L.LatLngExpression[], {
-        color: '#0082C3',
-        weight: 3,
-        opacity: 0.8
-      }).addTo(map);
-      
-      routePolylines.push(polyline);
-      
-      // Ajouter des marqueurs pour les points d'intérêt
-      route.waypoints.forEach((point, index) => {
-        const poiIcon = L.divIcon({
-          className: 'poi-marker',
-          html: '<div class="poi-marker-inner"></div>',
-          iconSize: [16, 16]
-        });
-        
-        const marker = L.marker([point.lat, point.lng], {
-          icon: poiIcon,
-          title: `Point ${index + 1}`
-        }).addTo(map);
-        
-        // Ajouter un écouteur d'événement pour afficher les détails du point
-        marker.on('click', () => {
-          selectedRoute = route;
-          selectedPoint = {
-            position: point,
-            name: `Point d'intérêt ${index + 1}`,
-            description: 'Description du point d\'intérêt',
-            image_url: '/images/poi-placeholder.jpg',
-            recommended_products: [
-              {
-                id: 1,
-                name: 'Chaussures de randonnée',
-                image_url: '/images/products/hiking-shoes.jpg',
-                price: 49.99,
-                url: 'https://www.decathlon.fr/p/chaussures-de-randonnee/_/R-p-308943'
-              },
-              {
-                id: 2,
-                name: 'Gourde 1L',
-                image_url: '/images/products/water-bottle.jpg',
-                price: 9.99,
-                url: 'https://www.decathlon.fr/p/gourde-randonnee/_/R-p-192278'
-              }
-            ]
-          };
-        });
-        
-        routeMarkers.push(marker);
-      });
-      
-      // Ajouter des marqueurs pour le début et la fin du parcours
-      const startIcon = L.divIcon({
-        className: 'start-marker',
-        html: '<div class="start-marker-inner"></div>',
-        iconSize: [16, 16]
-      });
-      
-      const endIcon = L.divIcon({
-        className: 'end-marker',
-        html: '<div class="end-marker-inner"></div>',
-        iconSize: [16, 16]
-      });
-      
-      const startMarker = L.marker([route.start_point.lat, route.start_point.lng], {
-        icon: startIcon,
-        title: 'Départ'
-      }).addTo(map);
-      
-      const endMarker = L.marker([route.end_point.lat, route.end_point.lng], {
-        icon: endIcon,
-        title: 'Arrivée'
-      }).addTo(map);
-      
-      routeMarkers.push(startMarker, endMarker);
-      
-      // Ajouter des écouteurs d'événements pour le début et la fin
-      startMarker.on('click', () => {
-        selectedRoute = route;
-        selectedPoint = {
-          position: route.start_point,
-          name: 'Point de départ',
-          description: 'Début du parcours',
-          image_url: '/images/start-point.jpg',
-          recommended_products: []
-        };
-      });
-      
-      endMarker.on('click', () => {
-        selectedRoute = route;
-        selectedPoint = {
-          position: route.end_point,
-          name: 'Point d\'arrivée',
-          description: 'Fin du parcours',
-          image_url: '/images/end-point.jpg',
-          recommended_products: []
-        };
-      });
-    });
-    
-    // Ajuster la vue pour montrer tous les parcours
-    if (routePolylines.length > 0) {
-      const group = L.featureGroup(routePolylines);
-      map.fitBounds(group.getBounds(), { padding: [50, 50] });
-    }
-  }
-  
-  function clearRouteDisplay() {
-    // Supprimer les polylines
-    routePolylines.forEach(polyline => {
-      polyline.remove();
-    });
-    routePolylines = [];
-    
-    // Supprimer les marqueurs
-    routeMarkers.forEach(marker => {
-      marker.remove();
-    });
-    routeMarkers = [];
-  }
-  
-  function startGeolocation() {
-    if (!browser || !navigator.geolocation) {
-      showNotification('La géolocalisation n\'est pas disponible sur votre appareil', 'info');
-      return;
-    }
-    
-    // Demander la position actuelle
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        updateUserPosition({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-      },
-      error => {
-        console.error('Erreur de géolocalisation:', error);
-        showNotification('Impossible d\'obtenir votre position', 'error');
-      },
-      { enableHighAccuracy: true }
-    );
-    
-    // Suivre la position de l'utilisateur
-    watchId = navigator.geolocation.watchPosition(
-      position => {
-        updateUserPosition({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-      },
-      error => {
-        console.error('Erreur de suivi de position:', error);
-      },
-      { enableHighAccuracy: true }
-    );
-  }
-  
-  function updateUserPosition(position: { lat: number; lng: number }) {
-    userPosition = position;
-    
-    if (userMarker && map) {
-      userMarker.setLatLng([position.lat, position.lng]);
-      userMarker.setOpacity(1);
-    }
-  }
-  
-  function centerOnUser() {
-    if (map && userPosition) {
-      map.setView([userPosition.lat, userPosition.lng], 16);
-    } else {
-      showNotification('Position non disponible', 'info');
-    }
-  }
-  
-  function closePointDetail() {
-    selectedPoint = null;
-  }
-  
-  function loadRouteById(routeId: number) {
-    if (!routeId) return;
-    
-    const route = routes.find(r => r.id === routeId);
-    if (route) {
-      selectedRoute = route;
-      
-      // Centrer la carte sur le parcours
-      if (map) {
-        const path = [
-          [route.start_point.lat, route.start_point.lng],
-          ...route.waypoints.map(wp => [wp.lat, wp.lng]),
-          [route.end_point.lat, route.end_point.lng]
-        ];
-        
-        const bounds = L.latLngBounds(path as L.LatLngExpression[]);
-        map.fitBounds(bounds, { padding: [50, 50] });
-      }
-    }
-  }
-  
-  async function loadPOIs(type?: string) {
+  async function loadSelectedRoute(routeId: number) {
     try {
-      // Nettoyer les marqueurs de POI existants
-      clearPOIMarkers();
-      
-      // Charger les POIs depuis la base de données
-      const pois = await getAllPOIs(type);
-      
-      if (!pois.length) {
-        if (type) {
-          showNotification(`Aucun point d'intérêt de type "${type}" trouvé`, 'info');
+      const route = await getRouteById(routeId);
+      if (route) {
+        selectedRoute = route;
+        
+        // Si la carte est initialisée, zoomer sur l'itinéraire sélectionné
+        if (map) {
+          focusOnRoute(route);
         }
-        return;
       }
-      
-      // Créer des marqueurs pour chaque POI
-      pois.forEach(poi => {
-        const poiIcon = L.divIcon({
-          className: `poi-marker ${type ? 'poi-marker-' + type : ''}`,
-          html: `<div class="poi-marker-inner"></div>`,
-          iconSize: [24, 24]
-        });
-        
-        const marker = L.marker([poi.latitude, poi.longitude], {
-          icon: poiIcon,
-          title: poi.name
-        }).addTo(map);
-        
-        // Générer des identifiants uniques pour les boutons
-        const detailsBtnId = `details-button-${poi.id}-${Date.now()}`;
-        const directionsBtnId = `directions-button-${poi.id}-${Date.now()}`;
-        
-        // Préparer le contenu de l'image
-        const imageContent = poi.image_url ? 
-          `<div class="relative">
-            <img src="${poi.image_url}" 
-                 alt="${poi.name}" 
-                 class="w-full h-36 object-cover" />
-            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-            <div class="absolute bottom-2 left-3 text-white">
-              <h3 class="text-xl font-bold">${poi.name}</h3>
-            </div>
-          </div>` : 
-          `<div class="bg-gray-100 p-4">
-            <h3 class="text-xl font-bold text-gray-800">${poi.name}</h3>
-          </div>`;
-        
-        // Créer le contenu de la popup avec HTML
-        const poiPopup = L.popup({
-          maxWidth: 300,
-          className: 'custom-popup'
-        }).setContent(`
-          <div class="p-0 overflow-hidden">
-            ${imageContent}
-            
-            <div class="p-3">
-              <div class="flex items-center mb-3">
-                <span class="material-icons text-amber-500 mr-1 text-sm">star</span>
-                <span class="text-sm font-medium">4.5</span>
-                <span class="mx-2 text-gray-400">•</span>
-                <span class="text-sm text-gray-600">${poi.type || 'Point d\'intérêt'}</span>
-              </div>
-              
-              <p class="text-sm text-gray-700 mb-3">
-                ${poi.description}
-              </p>
-              
-              <div class="flex flex-col space-y-2">
-                <button id="${detailsBtnId}" class="bg-[#0082C3] text-white py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
-                  <span class="material-icons mr-1 text-sm">info</span>
-                  Détails
-                </button>
-                <button id="${directionsBtnId}" class="border border-[#0082C3] text-[#0082C3] py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
-                  <span class="material-icons mr-1 text-sm">directions</span>
-                  Y aller
-                </button>
-              </div>
-            </div>
-          </div>
-        `);
-        
-        // Ajouter la popup au marqueur
-        marker.bindPopup(poiPopup);
-        
-        // Utiliser un seul écouteur d'événement pour le clic sur le marqueur
-        marker.on('click', function() {
-          marker.openPopup();
-          
-          // Attendre que le popup soit ajouté au DOM
-          setTimeout(() => {
-            // Nettoyer les anciens écouteurs si nécessaire
-            const detailsButton = document.getElementById(detailsBtnId);
-            const directionsButton = document.getElementById(directionsBtnId);
-            
-            if (detailsButton) {
-              // Supprimer les anciens écouteurs pour éviter les doublons
-              const newDetailsButton = detailsButton.cloneNode(true);
-              detailsButton.parentNode?.replaceChild(newDetailsButton, detailsButton);
-              
-              // Ajouter le nouvel écouteur pour afficher les détails dans une popup
-              newDetailsButton.addEventListener('click', async () => {
-                try {
-                  // Fermer la popup Leaflet
-                  marker.closePopup();
-                  
-                  // Récupérer les données complètes du POI
-                  const lat = marker.getLatLng().lat;
-                  const lng = marker.getLatLng().lng;
-                  
-                  // Créer un objet point pour la popup de détail
-                  selectedPoint = {
-                    position: { lat, lng },
-                    name: poi.name,
-                    description: poi.description,
-                    image_url: poi.image_url,
-                    opening_hours: poi.opening_hours,
-                    website: poi.website,
-                    recommended_products: [],
-                    details: [],
-                    activities: []
-                  };
-                  
-                  // Charger les détails supplémentaires si disponibles
-                  if (poi.id) {
-                    try {
-                      const { data: details } = await supabase
-                        .from('poi_details')
-                        .select('detail')
-                        .eq('poi_id', poi.id);
-                      
-                      if (details && details.length > 0) {
-                        selectedPoint.details = details.map(d => d.detail);
-                      }
-                      
-                      const { data: activities } = await supabase
-                        .from('poi_activities')
-                        .select('activity')
-                        .eq('poi_id', poi.id);
-                      
-                      if (activities && activities.length > 0) {
-                        selectedPoint.activities = activities.map(a => a.activity);
-                      }
-                      
-                      const { data: products } = await supabase
-                        .from('poi_products')
-                        .select('product_id, products(*)')
-                        .eq('poi_id', poi.id);
-                      
-                      if (products && products.length > 0) {
-                        selectedPoint.recommended_products = products.map(p => ({
-                          id: p.products?.id || 0,
-                          name: p.products?.name || 'Produit',
-                          image_url: p.products?.image_url || '/placeholder.jpg',
-                          price: p.products?.price || 0,
-                          url: p.products?.url || '#',
-                          category: p.products?.category || undefined
-                        }));
-                      }
-                    } catch (error) {
-                      console.error('Erreur lors du chargement des détails du POI:', error);
-                    }
-                  }
-                } catch (error) {
-                  console.error('Erreur lors de l\'affichage des détails:', error);
-                  showNotification('Impossible de charger les détails', 'error');
-                }
-              });
-            }
-            
-            if (directionsButton) {
-              // Supprimer les anciens écouteurs pour éviter les doublons
-              const newDirectionsButton = directionsButton.cloneNode(true);
-              directionsButton.parentNode?.replaceChild(newDirectionsButton, directionsButton);
-              
-              // Ajouter le nouvel écouteur
-              newDirectionsButton.addEventListener('click', () => {
-                if (navigator.geolocation) {
-                  navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                      const userLat = position.coords.latitude;
-                      const userLng = position.coords.longitude;
-                      const url = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${marker.getLatLng().lat},${marker.getLatLng().lng}&travelmode=walking`;
-                      window.open(url, '_blank');
-                    },
-                    (error) => {
-                      alert('Impossible d\'obtenir votre position. Veuillez activer la géolocalisation.');
-                    }
-                  );
-                } else {
-                  alert('La géolocalisation n\'est pas prise en charge par votre navigateur.');
-                }
-              });
-            }
-          }, 100);
-        });
-        
-        poiMarkers.push(marker);
-      });
-      
     } catch (error) {
-      console.error('Erreur lors du chargement des POIs:', error);
+      console.error('Erreur lors du chargement de l\'itinéraire:', error);
+    }
+  }
+  
+  async function loadPOIs() {
+    try {
+      await withLoading(async () => {
+        const poiData = await getAllPOIs();
+        
+        // Convertir les données de POI au format RoutePoint
+        pois = await Promise.all(poiData.map(async (poi) => {
+          try {
+            const fullPoi = await getFullPOIData(poi.latitude, poi.longitude);
+            if (fullPoi) return fullPoi;
+            
+            // Fallback si getFullPOIData échoue
+            return {
+              position: { lat: poi.latitude, lng: poi.longitude },
+              name: poi.name,
+              description: poi.description,
+              image_url: poi.image_url,
+              recommended_products: [],
+              opening_hours: poi.opening_hours,
+              website: poi.website
+            };
+          } catch (error) {
+            console.error(`Erreur lors du chargement des détails pour POI ${poi.id}:`, error);
+            return {
+              position: { lat: poi.latitude, lng: poi.longitude },
+              name: poi.name,
+              description: poi.description,
+              image_url: poi.image_url,
+              recommended_products: []
+            };
+          }
+        }));
+        
+        displayPOIs();
+      });
+    } catch (error) {
+      console.error('Erreur lors du chargement des points d\'intérêt:', error);
       showNotification('Erreur lors du chargement des points d\'intérêt', 'error');
     }
   }
   
-  function clearPOIMarkers() {
-    poiMarkers.forEach(marker => {
-      marker.remove();
-    });
+  function displayPOIs() {
+    if (!map) return;
+    
+    // Supprimer les marqueurs existants
+    poiMarkers.forEach(marker => marker.setMap(null));
     poiMarkers = [];
+    
+    // Créer un SVG personnalisé pour les marqueurs POI
+    const poiIcon = {
+      url: "data:image/svg+xml," + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#FF5722">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>
+      `),
+      scaledSize: new google.maps.Size(32, 32),
+      anchor: new google.maps.Point(16, 32),
+      labelOrigin: new google.maps.Point(16, 10)
+    };
+    
+    // Ajouter les marqueurs pour chaque POI
+    pois.forEach(poi => {
+      const marker = new google.maps.Marker({
+        position: poi.position,
+        map: map,
+        title: poi.name,
+        icon: poiIcon,
+        animation: google.maps.Animation.DROP
+      });
+      
+      // Ajouter un événement de clic
+      marker.addListener('click', (e: google.maps.MapMouseEvent) => {
+        // Empêcher la propagation du clic à la carte
+        e.stop();
+        
+        // Fermer toutes les infobulles ouvertes
+        infoWindows.forEach(window => window.close());
+        
+        // Définir ce POI comme sélectionné
+        selectedPOI = poi;
+      });
+      
+      poiMarkers.push(marker);
+    });
+    
+    // Désactiver les infobulles par défaut de Google Maps
+    if (map) {
+      map.setOptions({
+        clickableIcons: false
+      });
+    }
   }
   
-  function toggleFilters() {
-    showFilters = !showFilters;
+  function displayRoutes() {
+    if (!map) return;
+    
+    // Supprimer les marqueurs et chemins existants
+    routeMarkers.forEach(marker => marker.setMap(null));
+    routePaths.forEach(path => path.setMap(null));
+    routeMarkers = [];
+    routePaths = [];
+    
+    // Ajouter les nouveaux marqueurs et chemins
+    routes.forEach(route => {
+      // Créer un marqueur pour le point de départ
+      if (route.waypoints && route.waypoints.length > 0) {
+        const startPoint = route.waypoints[0];
+        const marker = new google.maps.Marker({
+          position: { lat: startPoint.lat, lng: startPoint.lng },
+          map: map,
+          title: route.name,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: '#0082C3',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+            scale: 8
+          }
+        });
+        
+        // Ajouter un événement de clic
+        marker.addListener('click', (e: google.maps.MapMouseEvent) => {
+          // Empêcher la propagation du clic à la carte
+          e.stop();
+          
+          // Fermer toutes les infobulles ouvertes
+          infoWindows.forEach(window => window.close());
+          
+          // Définir ce POI comme sélectionné (en créant un POI à partir des données de l'itinéraire)
+          selectedPOI = {
+            position: { lat: startPoint.lat, lng: startPoint.lng },
+            name: route.name,
+            description: route.description || `Départ de l'itinéraire ${route.name}`,
+            route_id: route.id,
+            is_route_start: true,
+            distance_km: route.distance_km,
+            difficulty: route.difficulty,
+            image_url: route.image_url || '',
+            recommended_products: []
+          };
+        });
+        
+        routeMarkers.push(marker);
+        
+        // Créer un chemin pour l'itinéraire
+        const path = route.waypoints.map(wp => ({
+          lat: wp.lat,
+          lng: wp.lng
+        }));
+        
+        const routePath = new google.maps.Polyline({
+          path: path,
+          geodesic: true,
+          strokeColor: route.id === selectedRouteId ? '#FF0000' : '#0082C3',
+          strokeOpacity: route.id === selectedRouteId ? 1.0 : 0.7,
+          strokeWeight: route.id === selectedRouteId ? 5 : 3,
+          map: map
+        });
+        
+        routePaths.push(routePath);
+        
+        // Ajouter les points d'intérêt de l'itinéraire
+        if (route.points_of_interest && route.points_of_interest.length > 0) {
+          // Créer un SVG personnalisé pour les marqueurs POI de l'itinéraire
+          const routePoiIcon = {
+            url: "data:image/svg+xml," + encodeURIComponent(`
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${route.id === selectedRouteId ? '#FF0000' : '#0082C3'}">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+            `),
+            scaledSize: new google.maps.Size(32, 32),
+            anchor: new google.maps.Point(16, 32),
+            labelOrigin: new google.maps.Point(16, 10)
+          };
+          
+          route.points_of_interest.forEach(poi => {
+            const poiMarker = new google.maps.Marker({
+              position: poi.position,
+              map: map,
+              title: poi.name,
+              icon: routePoiIcon,
+              animation: route.id === selectedRouteId ? google.maps.Animation.BOUNCE : null
+            });
+            
+            // Ajouter un événement de clic
+            poiMarker.addListener('click', (e: google.maps.MapMouseEvent) => {
+              // Empêcher la propagation du clic à la carte
+              e.stop();
+              
+              // Fermer toutes les infobulles ouvertes
+              infoWindows.forEach(window => window.close());
+              
+              // Définir ce POI comme sélectionné et ajouter l'info de l'itinéraire
+              selectedPOI = {
+                ...poi,
+                route_name: route.name,
+                route_id: route.id
+              };
+            });
+            
+            routeMarkers.push(poiMarker);
+          });
+        }
+        
+        // Si c'est l'itinéraire sélectionné, zoomer dessus
+        if (route.id === selectedRouteId) {
+          focusOnRoute(route);
+        }
+      }
+    });
   }
   
-  function applyFilter(type: string) {
-    selectedFilter = type;
-    loadPOIs(type);
-    showFilters = false;
+  function focusOnRoute(route: Route) {
+    if (!map || !route.waypoints || route.waypoints.length === 0) return;
+    
+    // Créer des limites pour englober tous les points de l'itinéraire
+    const bounds = new google.maps.LatLngBounds();
+    
+    // Ajouter tous les points de l'itinéraire aux limites
+    route.waypoints.forEach(point => {
+      bounds.extend({ lat: point.lat, lng: point.lng });
+    });
+    
+    // Ajouter les points d'intérêt aux limites
+    if (route.points_of_interest && route.points_of_interest.length > 0) {
+      route.points_of_interest.forEach(poi => {
+        bounds.extend(poi.position);
+      });
+    }
+    
+    // Ajuster la vue pour montrer tout l'itinéraire
+    map.fitBounds(bounds);
   }
   
-  function clearFilter() {
-    selectedFilter = '';
-    loadPOIs();
-    showFilters = false;
+  function startPositionTracking() {
+    if (!navigator.geolocation) {
+      console.error('Geolocation is not supported by your browser');
+      return;
+    }
+    
+    // Suivre la position
+    watchId = navigator.geolocation.watchPosition(
+      handlePositionUpdate,
+      (error) => console.error('Error getting location:', error),
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0
+      }
+    );
+  }
+  
+  function handlePositionUpdate(position: GeolocationPosition) {
+    if (!map) return;
+    
+    const pos = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude
+    };
+    
+    // Mettre à jour ou créer le marqueur de l'utilisateur
+    if (userMarker) {
+      userMarker.setPosition(pos);
+    } else {
+      userMarker = new google.maps.Marker({
+        position: pos,
+        map: map,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: '#FF0000',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          scale: 10
+        },
+        zIndex: 1000
+      });
+      
+      // Centrer la carte sur la position initiale si aucun itinéraire n'est sélectionné
+      if (!selectedRouteId) {
+        map.setCenter(pos);
+        map.setZoom(15);
+      }
+    }
+  }
+  
+  function handleRouteClick(route: Route) {
+    selectedRoute = route;
+    selectedRouteId = route.id;
+    
+    // Mettre à jour l'URL
+    const url = new URL(window.location.href);
+    url.searchParams.set('route', route.id.toString());
+    window.history.pushState({}, '', url.toString());
+    
+    // Mettre à jour l'affichage des itinéraires
+    displayRoutes();
+  }
+  
+  function clearSelectedRoute() {
+    selectedRoute = null;
+    selectedRouteId = null;
+    
+    // Mettre à jour l'URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete('route');
+    window.history.pushState({}, '', url.toString());
+    
+    // Mettre à jour l'affichage des itinéraires
+    displayRoutes();
+  }
+  
+  function clearSelectedPOI() {
+    selectedPOI = null;
+    isPOIExpanded = false; // Réinitialiser l'état d'expansion
+  }
+  
+  // Fonction pour basculer l'état d'expansion du panneau POI
+  function togglePOIExpansion() {
+    isPOIExpanded = !isPOIExpanded;
+  }
+  
+  // Gestionnaires d'événements pour le swipe
+  function handleTouchStart(event: TouchEvent) {
+    touchStartY = event.touches[0].clientY;
+  }
+  
+  function handleTouchMove(event: TouchEvent) {
+    touchEndY = event.touches[0].clientY;
+    
+    // Feedback visuel pendant le swipe
+    if (!selectedPOI) return;
+    
+    // Calculer la distance du swipe
+    const swipeDistance = touchEndY - touchStartY;
+    
+    // Appliquer un petit déplacement visuel pendant le swipe
+    if (isPOIExpanded && swipeDistance > 0 && swipeDistance < 100) {
+      // Swipe vers le bas en mode étendu
+      if (poiPanelElement && poiPanelElement.querySelector('.overflow-y-auto')?.scrollTop === 0) {
+        poiPanelElement.style.transform = `translateY(${swipeDistance / 10}px)`;
+      }
+    } else if (!isPOIExpanded && swipeDistance < 0 && swipeDistance > -100) {
+      // Swipe vers le haut en mode compact
+      poiPanelElement.style.transform = `translateY(${swipeDistance / 10}px)`;
+    }
+  }
+  
+  function handleTouchEnd() {
+    if (!selectedPOI) return;
+    
+    // Réinitialiser la transformation
+    if (poiPanelElement) {
+      poiPanelElement.style.transform = '';
+    }
+    
+    // Si le swipe est vers le haut (touchStartY > touchEndY) et d'une distance suffisante
+    if (touchStartY - touchEndY > 30 && !isPOIExpanded) {
+      isPOIExpanded = true;
+    } 
+    // Si le swipe est vers le bas (touchStartY < touchEndY) et d'une distance suffisante
+    else if (touchEndY - touchStartY > 30 && isPOIExpanded) {
+      // Vérifier si on est au début du scroll avant de fermer
+      if (poiPanelElement && poiPanelElement.querySelector('.overflow-y-auto')?.scrollTop === 0) {
+        isPOIExpanded = false;
+      }
+    }
+    
+    // Réinitialiser les valeurs
+    touchStartY = 0;
+    touchEndY = 0;
   }
 </script>
 
 <svelte:head>
-  <title>Carte des parcours | Decathlon Urban Trek</title>
-  <script>
-    // Empêcher le défilement de la page mais permettre le déplacement sur la carte
-    document.addEventListener('DOMContentLoaded', function() {
-      // Ajouter un gestionnaire d'événements pour empêcher le défilement de la page
-      // mais permettre les interactions sur la carte
-      document.addEventListener('touchmove', function(e) {
-        // Si l'événement ne provient pas de la carte, l'empêcher
-        if (!e.target.closest('#map')) {
-          e.preventDefault();
-        }
-      }, { passive: false });
-    });
-  </script>
+  <title>Carte | Decathlon Urban Trek</title>
 </svelte:head>
 
-<style>
-  .map-container {
-    width: 100%;
-    height: 100vh;
-    position: relative;
-    overflow: hidden; /* Empêcher le défilement */
-  }
-  
-  #map {
-    width: 100%;
-    height: 100%;
-  }
-  
-  /* Styles pour empêcher le défilement de la page lors de l'interaction avec la carte */
-  :global(body.map-page) {
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-    height: 100%;
-  }
-  
-  /* Permettre les interactions sur la carte */
-  :global(.leaflet-container) {
-    touch-action: auto !important;
-  }
-  
-  /* Styles pour la popup personnalisée */
-  :global(.custom-popup .leaflet-popup-content-wrapper) {
-    border-radius: 12px;
-    padding: 0;
-    overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  }
-  
-  :global(.custom-popup .leaflet-popup-content) {
-    margin: 0;
-    width: 100% !important;
-  }
-  
-  :global(.custom-popup .leaflet-popup-tip) {
-    background-color: white;
-  }
-  
-  .map-controls {
-    position: absolute;
-    bottom: 20px;
-    right: 20px;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  
-  .point-detail-container {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    padding: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
-  
-  .point-detail-wrapper {
-    width: 95%;
-    max-width: 600px;
-    max-height: 90vh;
-    border-radius: 12px;
-    overflow: hidden;
-    animation: popup-appear 0.3s ease-out;
-  }
-  
-  @keyframes popup-appear {
-    from {
-      opacity: 0;
-      transform: scale(0.9);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  
-  /* Styles pour les marqueurs personnalisés */
-  :global(.user-marker-inner) {
-    width: 20px;
-    height: 20px;
-    background-color: #0082C3;
-    border: 2px solid white;
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(0, 130, 195, 0.4);
-  }
-  
-  :global(.poi-marker-inner) {
-    width: 16px;
-    height: 16px;
-    background-color: #FF5722;
-    border: 2px solid white;
-    border-radius: 50%;
-  }
-  
-  :global(.start-marker-inner) {
-    width: 16px;
-    height: 16px;
-    background-color: #4CAF50;
-    border: 2px solid white;
-    border-radius: 50%;
-  }
-  
-  :global(.end-marker-inner) {
-    width: 16px;
-    height: 16px;
-    background-color: #F44336;
-    border: 2px solid white;
-    border-radius: 50%;
-  }
-  
-  /* Styles pour le bouton de localisation */
-  :global(.location-button) {
-    width: 56px !important;
-    height: 56px !important;
-    border-radius: 50% !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    background-color: #0082C3 !important;
-    color: white !important;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important;
-    border: none !important;
-    cursor: pointer !important;
-  }
-  
-  :global(.location-button .material-icons) {
-    font-size: 24px !important;
-  }
-  
-  /* Styles pour les filtres */
-  .map-controls {
-    position: absolute;
-    top: 80px;
-    right: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    z-index: 1000;
-  }
-  
-  .control-button {
-    width: 40px;
-    height: 40px;
-    background-color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .control-button:hover {
-    background-color: #f0f0f0;
-  }
-  
-  .control-button.active {
-    background-color: #0082C3;
-    color: white;
-  }
-  
-  .filter-panel {
-    position: absolute;
-    top: 80px;
-    right: 60px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    width: 250px;
-    z-index: 1000;
-    overflow: hidden;
-  }
-  
-  .filter-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid #eee;
-  }
-  
-  .filter-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
-  
-  .close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #666;
-  }
-  
-  .filter-options {
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  
-  .filter-option {
-    padding: 10px 12px;
-    text-align: left;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
-  .filter-option:hover {
-    background-color: #f0f0f0;
-  }
-  
-  .filter-option.active {
-    background-color: #e6f3fa;
-    color: #0082C3;
-    font-weight: 500;
-  }
-  
-  /* Styles pour le message de bienvenue */
-  .welcome-message {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    width: 90%;
-    max-width: 400px;
-    z-index: 1000;
-    overflow: hidden;
-  }
-  
-  .welcome-content {
-    padding: 16px;
-    position: relative;
-  }
-  
-  .close-welcome {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #666;
-  }
-  
-  .welcome-content h3 {
-    margin: 0 0 8px 0;
-    font-size: 18px;
-    font-weight: 600;
-    color: #0082C3;
-  }
-  
-  .welcome-content p {
-    margin: 0 0 16px 0;
-    font-size: 14px;
-    color: #333;
-  }
-  
-  .welcome-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-  
-  .inline-icon {
-    font-size: 16px;
-    vertical-align: middle;
-  }
-  
-  /* Styles pour les marqueurs de POI */
-  :global(.poi-marker) {
-    width: 24px !important;
-    height: 24px !important;
-  }
-  
-  :global(.poi-marker-inner) {
-    width: 100%;
-    height: 100%;
-    background-color: #0082C3;
-    border-radius: 50%;
-    border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-  
-  :global(.poi-marker-childrens_park .poi-marker-inner) {
-    background-color: #4CAF50;
-  }
-  
-  /* Styles pour la popup */
-  :global(.custom-popup .leaflet-popup-content-wrapper) {
-    padding: 0;
-    overflow: hidden;
-    border-radius: 8px;
-  }
-  
-  :global(.custom-popup .leaflet-popup-content) {
-    margin: 0;
-    width: 280px !important;
-  }
-  
-  :global(.custom-popup .leaflet-popup-tip) {
-    background-color: white;
-  }
-</style>
-
-<div class="map-container">
-  {#if isLoading}
-    <div class="loading-overlay">
-      <Loading size="lg" />
-    </div>
-  {/if}
-  
-  <div id="map"></div>
-  
-  <!-- Boutons de contrôle -->
-  <div class="map-controls">
-    <button 
-      class="control-button" 
-      on:click={centerOnUser}
-      title="Centrer sur ma position"
-    >
-      <span class="material-icons">my_location</span>
-    </button>
-    
-    <button 
-      class="control-button {selectedFilter ? 'active' : ''}" 
-      on:click={toggleFilters}
-      title="Filtrer les points d'intérêt"
-    >
-      <span class="material-icons">filter_list</span>
-    </button>
-  </div>
-  
-  <!-- Panneau de filtres -->
-  {#if showFilters}
-    <div class="filter-panel" transition:fade={{ duration: 200 }}>
-      <div class="filter-header">
-        <h3>Filtrer par type</h3>
-        <button on:click={toggleFilters} class="close-button">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-      
-      <div class="filter-options">
-        <button 
-          class="filter-option {selectedFilter === '' ? 'active' : ''}"
-          on:click={clearFilter}
-        >
-          Tous les points d'intérêt
-        </button>
-        
-        <button 
-          class="filter-option {selectedFilter === 'childrens_park' ? 'active' : ''}"
-          on:click={() => applyFilter('childrens_park')}
-        >
-          Parcs pour enfants
-        </button>
-      </div>
-    </div>
-  {/if}
-  
-  <!-- Message de bienvenue pour les parents -->
-  {#if showWelcomeMessage}
-    <div class="welcome-message" transition:fade={{ duration: 300 }}>
-      <div class="welcome-content">
-        <button class="close-welcome" on:click={closeWelcomeMessage}>
-          <span class="material-icons">close</span>
-        </button>
-        
-        <h3>Bonjour {userName || 'parent explorateur'} !</h3>
-        <p>Découvrez des parcs pour enfants à proximité en utilisant le filtre <span class="material-icons inline-icon">filter_list</span>.</p>
-        
-        <div class="welcome-actions">
-          <Button variant="primary" size="sm" on:click={closeWelcomeMessage}>
-            C'est parti !
-          </Button>
+<div class="fixed inset-0 bg-gray-50">
+  <!-- Carte -->
+  <div class="absolute inset-0">
+    {#if mapError}
+      <div class="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 p-6 text-center">
+        <div class="bg-white rounded-lg shadow-lg p-8 max-w-md">
+          <span class="material-icons text-red-500 text-5xl mb-4">error_outline</span>
+          <h2 class="text-xl font-bold text-gray-800 mb-2">Erreur de chargement de la carte</h2>
+          <p class="text-gray-600 mb-6">{mapError}</p>
+          <div class="text-sm text-gray-500 mb-4 p-4 bg-gray-50 rounded-lg">
+            <p class="font-medium mb-2">Message technique:</p>
+            <code class="block text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+              RefererNotAllowedMapError: Votre URL de site n'est pas autorisée à utiliser cette clé API Google Maps.
+            </code>
+            <p class="mt-2">URL à autoriser: <code class="bg-gray-100 px-1 py-0.5 rounded">http://localhost:5173</code></p>
+          </div>
+          <p class="text-sm text-gray-600 mb-4">
+            Pour résoudre ce problème, vous devez autoriser votre domaine local dans la console Google Cloud.
+          </p>
+          <a 
+            href="https://console.cloud.google.com/google/maps-apis/credentials" 
+            target="_blank"
+            rel="noopener noreferrer" 
+            class="inline-block bg-[#0082C3] text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors"
+          >
+            Ouvrir la console Google Cloud
+          </a>
         </div>
       </div>
-    </div>
-  {/if}
-  
-  <!-- Détails du point sélectionné -->
-  {#if selectedPoint}
-    <div class="point-detail-container" transition:fade={{ duration: 200 }}>
-      <div class="point-detail-wrapper">
-        <RoutePointDetail 
-          point={selectedPoint} 
-          onClose={closePointDetail}
-        />
+    {/if}
+    
+    <div bind:this={mapElement} class="w-full h-full"></div>
+    
+    <!-- Panneau latéral des itinéraires -->
+    <div class="absolute top-4 left-4 w-80 max-h-[calc(100%-32px)] bg-white rounded-lg shadow-lg overflow-hidden z-10">
+      <div class="p-4 bg-[#0082C3] text-white">
+        <h2 class="text-xl font-bold">Parcours disponibles</h2>
+      </div>
+      
+      <div class="overflow-y-auto max-h-[calc(100%-60px)]">
+        {#if routes.length === 0}
+          <div class="p-4 text-center text-gray-500">
+            {#if isLoadingRoutes}
+              Chargement des parcours...
+            {:else}
+              Aucun parcours disponible.
+            {/if}
+          </div>
+        {:else}
+          <div class="divide-y">
+            {#each routes as route}
+              <button 
+                class="w-full p-4 text-left hover:bg-gray-50 transition-colors flex items-start gap-3 {route.id === selectedRouteId ? 'bg-blue-50' : ''}"
+                on:click={() => handleRouteClick(route)}
+              >
+                <div class="flex-shrink-0 w-2 h-full rounded-full bg-[#0082C3]"></div>
+                <div>
+                  <h3 class="font-bold text-gray-900">{route.name}</h3>
+                  <div class="text-sm text-gray-600 mt-1">
+                    <span>{route.distance_km} km</span>
+                    <span class="mx-1">•</span>
+                    <span>{route.difficulty}</span>
+                  </div>
+                </div>
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
-  {/if}
-</div> 
+    
+    <!-- Détails de l'itinéraire sélectionné -->
+    {#if selectedRoute && !selectedPOI}
+      <div class="absolute bottom-4 left-4 right-4 md:left-auto md:w-80 bg-white rounded-lg shadow-lg overflow-hidden z-10">
+        <div class="p-4 bg-[#0082C3] text-white flex justify-between items-center">
+          <h2 class="text-xl font-bold">{selectedRoute.name}</h2>
+          <button 
+            class="text-white hover:text-gray-200 transition-colors"
+            on:click={clearSelectedRoute}
+            aria-label="Fermer"
+          >
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        
+        <div class="p-4">
+          <p class="text-gray-600 mb-4">{selectedRoute.description}</p>
+          
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <div class="text-sm text-gray-500">Distance</div>
+              <div class="font-semibold">{selectedRoute.distance_km} km</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500">Difficulté</div>
+              <div class="font-semibold">{selectedRoute.difficulty}</div>
+            </div>
+          </div>
+          
+          <a 
+            href={`/routes/${selectedRoute.id}`}
+            class="block w-full bg-[#0082C3] text-white text-center py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
+          >
+            Voir détails
+          </a>
+        </div>
+      </div>
+    {/if}
+    
+    <!-- Panneau de détails du POI sélectionné (style Google Maps) -->
+    {#if selectedPOI}
+      <div 
+        bind:this={poiPanelElement}
+        class="absolute bottom-0 left-0 right-0 bg-white shadow-lg z-20 rounded-t-2xl flex flex-col transform transition-all duration-300 ease-out {isPOIExpanded ? 'h-[80vh]' : 'h-auto'} animate-slide-up"
+        on:touchstart={handleTouchStart}
+        on:touchmove={handleTouchMove}
+        on:touchend={handleTouchEnd}
+        on:click|stopPropagation={() => {}}
+      >
+        <!-- Barre de titre avec poignée -->
+        <div 
+          class="flex justify-center items-center p-2 relative border-b border-gray-200 cursor-pointer touch-manipulation"
+          on:click={togglePOIExpansion}
+          on:touchstart|stopPropagation={handleTouchStart}
+          on:touchmove|stopPropagation={handleTouchMove}
+          on:touchend|stopPropagation={handleTouchEnd}
+        >
+          <div class="w-12 h-1 bg-gray-300 rounded-full"></div>
+        </div>
+        
+        <!-- Version compacte (titre et boutons uniquement) -->
+        {#if !isPOIExpanded}
+          <div class="p-5">
+            <div class="flex items-start pt-2">
+              <div>
+                <h2 class="text-xl font-medium text-gray-900">{selectedPOI.name}</h2>
+                
+                {#if selectedPOI.opening_hours}
+                  <div class="text-green-600 font-medium text-sm mt-1">
+                    {selectedPOI.opening_hours}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {:else}
+          <!-- Version étendue avec tous les détails -->
+          <div class="overflow-y-auto overscroll-contain flex-grow">
+            <div class="relative">
+              <!-- Image du POI -->
+              {#if selectedPOI.image_url}
+                <div class="w-full">
+                  <img src={selectedPOI.image_url} alt={selectedPOI.name} class="w-full h-48 object-cover">
+                </div>
+              {/if}
+            </div>
+            
+            <div class="p-4">
+              <!-- Titre du POI -->
+              <h2 class="text-xl font-medium text-gray-900 mb-2">{selectedPOI.name}</h2>
+              
+              <!-- Horaires d'ouverture -->
+              {#if selectedPOI.opening_hours}
+                <div class="text-green-600 font-medium text-sm mb-3">
+                  {selectedPOI.opening_hours}
+                </div>
+              {/if}
+              
+              <!-- Badges d'information -->
+              {#if selectedPOI.route_name}
+                <div class="inline-flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs mb-3">
+                  <span class="material-icons text-xs mr-1">directions_walk</span>
+                  <span>Point d'intérêt sur "{selectedPOI.route_name}"</span>
+                </div>
+              {/if}
+              
+              {#if selectedPOI.is_route_start}
+                <div class="inline-flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs mb-3">
+                  <span class="material-icons text-xs mr-1">directions_walk</span>
+                  <span>{selectedPOI.distance_km} km · {selectedPOI.difficulty}</span>
+                </div>
+              {/if}
+              
+              <!-- Description -->
+              {#if selectedPOI.description}
+                <p class="text-gray-600 text-sm my-3">{selectedPOI.description}</p>
+              {/if}
+              
+              <!-- Produits recommandés -->
+              {#if selectedPOI.recommended_products && selectedPOI.recommended_products.length > 0}
+                <div class="mt-4">
+                  <h3 class="text-sm font-semibold text-gray-700 mb-2">Produits recommandés</h3>
+                  <div class="grid grid-cols-2 gap-3">
+                    {#each selectedPOI.recommended_products as product}
+                      <div class="bg-gray-50 rounded-lg p-2">
+                        {#if product.image_url}
+                          <img src={product.image_url} alt={product.name} class="w-full h-24 object-contain mb-2">
+                        {/if}
+                        <div class="text-xs font-medium">{product.name}</div>
+                        {#if product.price}
+                          <div class="text-xs text-blue-600 font-bold">{product.price} €</div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              
+              <!-- Informations supplémentaires -->
+              {#if selectedPOI.website}
+                <div class="flex items-center mt-3 text-sm text-blue-600">
+                  <span class="material-icons text-gray-500 mr-2 text-base">language</span>
+                  <a href={selectedPOI.website} target="_blank" rel="noopener noreferrer" class="underline">
+                    {selectedPOI.website.replace(/^https?:\/\/(www\.)?/, '')}
+                  </a>
+                </div>
+              {/if}
+              
+              <!-- Espace en bas pour éviter que le contenu ne soit caché par les boutons -->
+              <div class="h-16"></div>
+            </div>
+          </div>
+        {/if}
+        
+        <!-- Boutons d'action en bas (toujours visibles) -->
+        <div class="grid grid-cols-3 border-t border-gray-200">
+          {#if selectedPOI.is_route_start}
+            <a href={`/routes/${selectedPOI.route_id}`} class="flex flex-col items-center justify-center py-3 text-blue-600">
+              <span class="material-icons text-2xl mb-1">info</span>
+              <span class="text-xs">Détails</span>
+            </a>
+          {:else}
+            <button class="flex flex-col items-center justify-center py-3 text-blue-600">
+              <span class="material-icons text-2xl mb-1">directions</span>
+              <span class="text-xs">Itinéraire</span>
+            </button>
+          {/if}
+          
+          <button class="flex flex-col items-center justify-center py-3 text-blue-600">
+            <span class="material-icons text-2xl mb-1">navigation</span>
+            <span class="text-xs">Démarrer</span>
+          </button>
+          
+          {#if selectedPOI.website}
+            <a href={selectedPOI.website} target="_blank" rel="noopener noreferrer" class="flex flex-col items-center justify-center py-3 text-blue-600">
+              <span class="material-icons text-2xl mb-1">language</span>
+              <span class="text-xs">Site web</span>
+            </a>
+          {:else}
+            <button class="flex flex-col items-center justify-center py-3 text-blue-600">
+              <span class="material-icons text-2xl mb-1">call</span>
+              <span class="text-xs">Appeler</span>
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  :global(.gm-style-cc) {
+    display: none;
+  }
+  
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out forwards;
+  }
+</style> 

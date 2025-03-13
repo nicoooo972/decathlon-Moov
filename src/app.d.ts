@@ -9,6 +9,12 @@ declare global {
 		// interface PageData {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		google: typeof google;
+	}
 }
+
+/// <reference types="@types/google.maps" />
 
 export {};

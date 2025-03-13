@@ -8,8 +8,12 @@
   import Button from '$lib/components/ui/button.svelte';
   import Loading from '$lib/components/ui/loading.svelte';
   import type { Route } from '$lib/types';
+  import { startTracking, stopTracking, isTracking } from '$lib/services/tracking-service';
+  import TrackingMap from '$lib/components/tracking-map.svelte';
   
-  let route: Route | null = null;
+  export let data;
+  const route = data.route;
+  
   let isLoading = true;
   let isFavorite = false;
   let toggleFavoriteLoading = false;
@@ -119,6 +123,27 @@
     const target = event.target as HTMLImageElement;
     if (target) {
       target.src = '/images/route-placeholder.jpg';
+    }
+  }
+  
+  async function handleStartTracking() {
+    try {
+      await startTracking(route.id);
+      showNotification('Suivi du trajet démarré', 'success');
+    } catch (error) {
+      console.error('Error starting tracking:', error);
+      showNotification('Erreur lors du démarrage du suivi', 'error');
+    }
+  }
+  
+  async function handleStopTracking() {
+    try {
+      await stopTracking();
+      showNotification('Trajet enregistré avec succès', 'success');
+      goto('/tracks');
+    } catch (error) {
+      console.error('Error stopping tracking:', error);
+      showNotification('Erreur lors de l\'arrêt du suivi', 'error');
     }
   }
 </script>
@@ -232,6 +257,38 @@
         </div>
       </div>
       
+      <!-- Carte avec le trajet -->
+      <div class="mb-8">
+        <TrackingMap routeId={route.id} />
+      </div>
+      
+      <!-- Boutons d'action -->
+      <div class="flex gap-4 mb-8">
+        {#if $isTracking}
+          <button
+            class="bg-red-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors"
+            on:click={handleStopTracking}
+          >
+            Terminer
+          </button>
+        {:else}
+          <button
+            class="bg-[#0082C3] text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
+            on:click={handleStartTracking}
+          >
+            Y aller
+          </button>
+        {/if}
+        
+        <button 
+          class="border border-gray-300 text-gray-700 px-6 py-2 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+          on:click={toggleFavorite}
+          disabled={toggleFavoriteLoading}
+        >
+          {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+        </button>
+      </div>
+      
       <!-- Points d'intérêt -->
       <h2 class="text-2xl font-bold text-gray-900 mb-4">Points d'intérêt</h2>
       <div class="space-y-6">
@@ -285,6 +342,25 @@
             <p class="text-gray-600">Aucun point d'intérêt n'est disponible pour ce parcours.</p>
           </div>
         {/if}
+      </div>
+      
+      <div class="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-lg font-semibold mb-2">Distance</h3>
+          <p class="text-2xl font-bold text-[#0082C3]">{route.distance} km</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-lg font-semibold mb-2">Dénivelé</h3>
+          <p class="text-2xl font-bold text-[#0082C3]">{route.elevation_gain} m</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-lg font-semibold mb-2">Durée estimée</h3>
+          <p class="text-2xl font-bold text-[#0082C3]">{route.estimated_duration}</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-lg font-semibold mb-2">Difficulté</h3>
+          <p class="text-2xl font-bold text-[#0082C3]">{route.difficulty}</p>
+        </div>
       </div>
     </div>
   {:else}

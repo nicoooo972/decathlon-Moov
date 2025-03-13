@@ -4,6 +4,8 @@
   import { currentUser } from '$lib/services/auth';
   import { hasCompletedPreferences } from '$lib/services/preferences';
   import { getUserSteps, type UserSteps } from '$lib/services/steps';
+  import { getPersonalizedRecommendations, getNearbyPOIs } from '$lib/services/recommendations';
+  import type { Route } from '$lib/types';
   import { fade, fly } from 'svelte/transition';
   import Loading from '$lib/components/ui/loading.svelte';
   import Button from '$lib/components/ui/button.svelte';
@@ -16,6 +18,9 @@
   let userSteps: UserSteps | null = null;
   let stepsGoal = 10000; // Objectif quotidien par défaut
   let stepsPercentage = 0;
+  let recommendations: Route[] = [];
+  let nearbyPOIs: Route[] = [];
+  let userLocation = { latitude: 48.8566, longitude: 2.3522 }; // Paris par défaut
   
   // Contenu des écrans d'introduction
   const introScreens = [
@@ -62,6 +67,52 @@
     }
   }
   
+  async function loadRecommendations() {
+    if ($currentUser) {
+      recommendations = await getPersonalizedRecommendations(
+        $currentUser.id,
+        userLocation.latitude,
+        userLocation.longitude
+      );
+    } else {
+      recommendations = [];
+    }
+  }
+  
+  async function loadNearbyPOIs() {
+    try {
+      // Obtenir la position de l'utilisateur avant de charger les POIs
+      await getUserLocation();
+      nearbyPOIs = await getNearbyPOIs(userLocation.latitude, userLocation.longitude, 10, 6);
+      console.log('POIs à proximité chargés:', nearbyPOIs);
+    } catch (error) {
+      console.error('Erreur lors du chargement des POIs à proximité:', error);
+      nearbyPOIs = [];
+    }
+  }
+  
+  async function getUserLocation() {
+    if (browser && navigator.geolocation) {
+      return new Promise<{ latitude: number, longitude: number }>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            userLocation = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            };
+            resolve(userLocation);
+          },
+          (error) => {
+            console.error('Erreur de géolocalisation:', error);
+            resolve(userLocation); // Utiliser la position par défaut en cas d'erreur
+          },
+          { timeout: 10000, enableHighAccuracy: true }
+        );
+      });
+    }
+    return userLocation;
+  }
+  
   function nextSplashStep() {
     if (splashStep < introScreens.length - 1) {
       splashStep++;
@@ -104,6 +155,21 @@
     }
   }
   
+  function formatDuration(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h${mins > 0 ? mins : ''}` : `${mins}min`;
+  }
+  
+  function getDifficultyClass(difficulty: string): string {
+    switch (difficulty) {
+      case 'facile': return 'text-green-600';
+      case 'moyen': return 'text-orange-500';
+      case 'difficile': return 'text-red-600';
+      default: return 'text-green-600';
+    }
+  }
+  
   onMount(async () => {
     if ($currentUser) {
       showSplash = false;
@@ -131,6 +197,15 @@
     
     // Charger les données de pas
     await loadUserSteps();
+    
+    // Obtenir la position de l'utilisateur
+    await getUserLocation();
+    
+    // Charger les recommandations et les POIs à proximité
+    await Promise.all([
+      loadRecommendations(),
+      loadNearbyPOIs()
+    ]);
   });
 </script>
 
@@ -216,29 +291,95 @@
       
       <!-- Contenu principal -->
       <div class="flex-grow bg-white">
-        <!-- Section Parcours recommandés -->
-        <div class="px-6 py-8">
-          <h2 class="text-2xl font-bold text-gray-900 mb-6">Parcours recommandés</h2>
-          
-          <!-- Carte de parcours -->
-          <div class="bg-gray-100 rounded-lg overflow-hidden mb-4">
-            <div class="h-48 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Parcours" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-1">Découverte du Quartier Latin</h3>
-              <p class="text-gray-600 text-sm mb-3">Un parcours culturel au cœur de Paris</p>
-              <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-500">2.5 km • 1h30</span>
-                <Button variant="text" on:click={() => goto('/routes/1')}>Voir</Button>
-              </div>
-            </div>
+        <!-- Section "Vos recommandations" -->
+        <section class="mb-8 px-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Vos recommandations</h2>
+            <a href="/recommendations" class="text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
           </div>
-        </div>
+          
+          <div class="flex overflow-x-auto space-x-4 pb-2">
+            {#each recommendations.slice(0, 4) as route}
+              <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                <div class="relative h-[120px]">
+                  <img src={route.image_url || "/placeholder.jpg"} alt={route.name} class="w-full h-full object-cover" />
+                </div>
+                <div class="p-2 h-[61.51px] flex flex-col justify-between">
+                  <h3 class="font-medium text-sm truncate">{route.name}</h3>
+                  <div class="flex justify-between text-xs">
+                    <span>{formatDuration(route.duration_minutes)}</span>
+                    <span class={getDifficultyClass(route.difficulty)}>{route.difficulty}</span>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              {#each Array(2) as _, i}
+                <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                  <div class="h-[120px] bg-gray-200"></div>
+                  <div class="p-2 h-[61.51px]">
+                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div class="flex justify-between">
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/each}
+          </div>
+        </section>
+        
+        <!-- Section des POIs à proximité -->
+        <section class="mb-8 px-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold flex items-center">
+              <span class="material-icons mr-2">near_me</span>
+              À proximité de vous
+            </h2>
+            <a href="/map" class="text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
+          </div>
+          
+          <div class="flex overflow-x-auto space-x-4 pb-2">
+            {#each nearbyPOIs as poi}
+              <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                <div class="relative h-[120px]">
+                  <img src={poi.image_url || "/placeholder.jpg"} alt={poi.name} class="w-full h-full object-cover" />
+                </div>
+                <div class="p-2 h-[61.51px] flex flex-col justify-between">
+                  <h3 class="font-medium text-sm truncate">{poi.name}</h3>
+                  <div class="flex justify-between text-xs">
+                    <span>
+                      {Math.round((poi.distance_km || 0) * 10) / 10} km • 
+                      {typeof poi.duration_minutes === 'number' ? poi.duration_minutes : 0} min
+                    </span>
+                    <span class={getDifficultyClass(poi.difficulty)}>{poi.difficulty}</span>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              {#each Array(2) as _, i}
+                <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                  <div class="h-[120px] bg-gray-200"></div>
+                  <div class="p-2 h-[61.51px]">
+                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div class="flex justify-between">
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/each}
+          </div>
+        </section>
       </div>
     </div>
   {/if}

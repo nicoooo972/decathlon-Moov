@@ -12,7 +12,7 @@
   import TrackingMap from '$lib/components/tracking-map.svelte';
   
   export let data;
-  const route = data.route;
+  let route: Route | null = null;
   
   let isLoading = true;
   let isFavorite = false;
@@ -127,6 +127,8 @@
   }
   
   async function handleStartTracking() {
+    if (!route) return;
+    
     try {
       await startTracking(route.id);
       showNotification('Suivi du trajet démarré', 'success');
@@ -347,19 +349,19 @@
       <div class="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-white p-6 rounded-lg shadow">
           <h3 class="text-lg font-semibold mb-2">Distance</h3>
-          <p class="text-2xl font-bold text-[#0082C3]">{route.distance} km</p>
+          <p class="text-2xl font-bold text-[#0082C3]">{route?.distance_km} km</p>
         </div>
         <div class="bg-white p-6 rounded-lg shadow">
           <h3 class="text-lg font-semibold mb-2">Dénivelé</h3>
-          <p class="text-2xl font-bold text-[#0082C3]">{route.elevation_gain} m</p>
+          <p class="text-2xl font-bold text-[#0082C3]">0 m</p>
         </div>
         <div class="bg-white p-6 rounded-lg shadow">
           <h3 class="text-lg font-semibold mb-2">Durée estimée</h3>
-          <p class="text-2xl font-bold text-[#0082C3]">{route.estimated_duration}</p>
+          <p class="text-2xl font-bold text-[#0082C3]">{route ? formatDuration(route.duration_minutes) : ''}</p>
         </div>
         <div class="bg-white p-6 rounded-lg shadow">
           <h3 class="text-lg font-semibold mb-2">Difficulté</h3>
-          <p class="text-2xl font-bold text-[#0082C3]">{route.difficulty}</p>
+          <p class="text-2xl font-bold text-[#0082C3]">{route?.difficulty}</p>
         </div>
       </div>
     </div>

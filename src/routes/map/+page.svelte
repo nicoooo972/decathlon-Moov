@@ -823,12 +823,14 @@
   
   // Nettoyer la navigation
   function clearNavigation() {
-    isNavigating = false;
-    
     // Arrêter le suivi si actif
     if (isTracking) {
       stopTracking();
     }
+    
+    isNavigating = false;
+    navigationDestination = null;
+    navigationDistance = "";
     
     // Supprimer le renderer de directions
     if (directionsRenderer) {
@@ -885,6 +887,11 @@
   function stopTracking() {
     if (!isTracking) return;
     
+    // Sauvegarder les statistiques finales avant de réinitialiser
+    const finalDistance = distance;
+    const finalTime = elapsedTime;
+    
+    // Arrêter le suivi
     isTracking = false;
     
     // Arrêter l'intervalle de mise à jour du temps
@@ -893,22 +900,28 @@
       trackingInterval = null;
     }
     
-    // Calculer les statistiques finales
-    const endTime = Date.now();
-    const durationMs = startTime ? endTime - startTime : 0;
-    const durationMinutes = Math.floor(durationMs / 60000);
+    // Nettoyer les chemins de suivi
+    trackingPath.forEach(path => path.setMap(null));
+    trackingPath = [];
+    trackingCoordinates = [];
     
-    // Enregistrer les données du trajet (à implémenter)
+    // Réinitialiser les compteurs
+    startTime = null;
+    elapsedTime = 0;
+    distance = 0;
+    stepCount = 0;
+    
+    // Enregistrer les données du trajet
     saveTrackingData({
       coordinates: trackingCoordinates,
-      distance: distance,
-      duration: durationMinutes,
+      distance: finalDistance,
+      duration: Math.floor(finalTime / 60),
       steps: stepCount,
       startTime: startTime || 0,
-      endTime: endTime
+      endTime: Date.now()
     });
     
-    showNotification(`Trajet terminé: ${distance.toFixed(2)} km en ${formatTime(elapsedTime)}`, 'success');
+    showNotification(`Trajet terminé: ${finalDistance.toFixed(2)} km en ${formatTime(finalTime)}`, 'success');
   }
   
   // Enregistrer les données du trajet
@@ -1247,7 +1260,7 @@
     
     <!-- Panneau de navigation et de suivi -->
     {#if isNavigating && navigationDestination}
-      <div class="absolute bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden z-20">
+      <div class="absolute bottom-0 left-0 right-0 bg-white shadow-lg overflow-hidden z-20 border-t-4 border-[#0082C3]">
         <div class="p-4 bg-[#0082C3] text-white flex justify-between items-center">
           <h2 class="text-lg font-bold">Navigation vers {navigationDestination.name}</h2>
           <button 
@@ -1260,21 +1273,40 @@
         </div>
         
         <div class="p-4">
-          {#if !isTracking}
-            <!-- Informations sur la destination -->
-            <div class="mb-4">
-              <div class="flex items-center mb-2">
-                <span class="material-icons text-blue-600 mr-2">place</span>
-                <span class="text-gray-700">{navigationDestination.name}</span>
-              </div>
-              <div class="flex items-center mb-2">
-                <span class="material-icons text-blue-600 mr-2">directions_walk</span>
-                <span class="text-gray-700">Distance: {navigationDistance}</span>
-              </div>
+          <!-- Informations sur la destination -->
+          <div class="mb-4">
+            <div class="flex items-center mb-2">
+              <span class="material-icons text-blue-600 mr-2">place</span>
+              <span class="text-gray-700">{navigationDestination.name}</span>
             </div>
-          {/if}
+            <div class="flex items-center mb-2">
+              <span class="material-icons text-blue-600 mr-2">directions_walk</span>
+              <span class="text-gray-700">Distance: {navigationDistance}</span>
+            </div>
+          </div>
           
-          {#if isTracking}
+          {#if !isTracking}
+            <!-- Bouton pour démarrer le suivi -->
+            <button 
+              class="w-full bg-[#0082C3] text-white text-center py-3 font-semibold hover:bg-blue-600 transition-colors mb-2"
+              on:click={startTracking}
+            >
+              Démarrer le suivi
+            </button>
+            
+            <!-- Bouton pour retourner à la carte -->
+            <button 
+              class="w-full border border-[#0082C3] text-[#0082C3] text-center py-3 font-semibold hover:bg-blue-50 transition-colors"
+              on:click={() => {
+                if (map && userMarker) {
+                  map.setCenter(userMarker.getPosition()!);
+                  map.setZoom(16);
+                }
+              }}
+            >
+              Retour à ma position
+            </button>
+          {:else}
             <!-- Affichage des statistiques pendant le suivi -->
             <div class="grid grid-cols-3 gap-4 mb-4">
               <div class="text-center">
@@ -1291,19 +1323,21 @@
               </div>
             </div>
             
-            <button 
-              class="w-full bg-red-600 text-white text-center py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
-              on:click={stopTracking}
-            >
-              Arrêter
-            </button>
-          {:else}
-            <button 
-              class="w-full bg-[#0082C3] text-white text-center py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
-              on:click={startTracking}
-            >
-              Démarrer le suivi
-            </button>
+            <div class="grid grid-cols-2 gap-2">
+              <button 
+                class="w-full bg-red-600 text-white text-center py-3 font-semibold hover:bg-red-700 transition-colors"
+                on:click={stopTracking}
+              >
+                Arrêter
+              </button>
+              
+              <button 
+                class="w-full bg-gray-600 text-white text-center py-3 font-semibold hover:bg-gray-700 transition-colors"
+                on:click={clearNavigation}
+              >
+                Annuler
+              </button>
+            </div>
           {/if}
         </div>
       </div>

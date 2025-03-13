@@ -135,14 +135,17 @@
             Bonjour {$currentUser?.first_name || 'Nicolas'} !
           </h1>
           
+          <!-- Espace supplémentaire entre le titre et le rectangle bleu -->
+          <div class="h-16"></div>
+          
           <!-- Carte de statistiques avec mascotte -->
           <div class="relative mb-8">
             <!-- Mascotte positionnée derrière le rectangle -->
-            <div class="absolute -top-10 right-8 z-0">
-              <img src="/icons/Mascotte Famille.png" alt="Mascotte" class="w-28 h-28 object-contain" />
+            <div class="absolute -top-14 right-8 z-0">
+              <img src="/icons/Mascotte Famille.png" alt="Mascotte" class="w-[76.05px] h-[117.53px] object-contain" />
             </div>
             
-            <div class="bg-[#A8DCFA] rounded-3xl p-6 relative z-10">
+            <div class="bg-[#D0EEF9] rounded-3xl p-6 relative z-10">
               <div class="flex items-center">
                 <!-- Cercle de progression -->
                 <div class="relative w-24 h-24 mr-6 flex-shrink-0">

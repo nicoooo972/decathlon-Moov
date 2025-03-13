@@ -6,6 +6,11 @@ import type { Location } from '$lib/types';
 export const isTracking = writable(false);
 export const currentPoints = writable<Location[]>([]);
 export const currentTrackId = writable<string | null>(null);
+export const currentStats = writable({
+  distance: 0,
+  duration: 0,
+  speed: 0
+});
 
 let watchId: number | null = null;
 let startTime: Date | null = null;
@@ -34,6 +39,7 @@ export const startTracking = async (routeId?: number) => {
     currentTrackId.set(track.id);
     startTime = new Date();
     isTracking.set(true);
+    currentStats.set({ distance: 0, duration: 0, speed: 0 });
 
     // Start watching position
     watchId = navigator.geolocation.watchPosition(
@@ -73,6 +79,7 @@ export const stopTracking = async () => {
     // Reset stores
     currentTrackId.set(null);
     currentPoints.set([]);
+    currentStats.set({ distance: 0, duration: 0, speed: 0 });
     isTracking.set(false);
     startTime = null;
     lastPoint = null;
@@ -118,7 +125,32 @@ const handleError = (error: GeolocationPositionError) => {
     console.error('Error getting location:', error);
 };
 
+// Fonction utilitaire pour calculer la distance entre deux points GPS (formule de Haversine)
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Rayon de la Terre en km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Distance en km
+}
+
 const updateStats = (lastPosition: GeolocationPosition, currentPosition: GeolocationPosition) => {
-    // Calculate distance, speed, etc.
-    // This can be implemented based on your needs
+    const timeDiff = (currentPosition.timestamp - lastPosition.timestamp) / 1000; // en secondes
+    const distance = calculateDistance(
+        lastPosition.coords.latitude,
+        lastPosition.coords.longitude,
+        currentPosition.coords.latitude,
+        currentPosition.coords.longitude
+    ) * 1000; // convertir en mètres
+
+    currentStats.update(stats => ({
+        ...stats,
+        distance: stats.distance + distance,
+        duration: stats.duration + timeDiff,
+        speed: currentPosition.coords.speed || (distance / timeDiff)
+    }));
 }; 

@@ -3,6 +3,9 @@
   import { goto } from '$app/navigation';
   import { currentUser } from '$lib/services/auth';
   import { hasCompletedPreferences } from '$lib/services/preferences';
+  import { getUserSteps, type UserSteps } from '$lib/services/steps';
+  import { getPersonalizedRecommendations, getNearbyPOIs } from '$lib/services/recommendations';
+  import type { Route } from '$lib/types';
   import { fade, fly } from 'svelte/transition';
   import Loading from '$lib/components/ui/loading.svelte';
   import Button from '$lib/components/ui/button.svelte';
@@ -12,6 +15,12 @@
   let showSplash = true;
   let splashStep = 0;
   let authChecked = false;
+  let userSteps: UserSteps | null = null;
+  let stepsGoal = 10000; // Objectif quotidien par défaut
+  let stepsPercentage = 0;
+  let recommendations: Route[] = [];
+  let nearbyPOIs: Route[] = [];
+  let userLocation = { latitude: 48.8566, longitude: 2.3522 }; // Paris par défaut
   
   // Contenu des écrans d'introduction
   const introScreens = [
@@ -39,6 +48,69 @@
   $: if ($currentUser) {
     showSplash = false;
     checkUserPreferences();
+  }
+  
+  // Calculer le pourcentage de l'objectif atteint
+  $: if (userSteps) {
+    stepsPercentage = Math.min(100, Math.round((userSteps.total_steps / stepsGoal) * 100));
+  }
+  
+  // Calculer le dashoffset pour l'anneau de progression
+  $: dashOffset = 251.2 - (251.2 * stepsPercentage / 100);
+  
+  async function loadUserSteps() {
+    if ($currentUser) {
+      userSteps = await getUserSteps();
+      if (!userSteps) {
+        userSteps = { total_steps: 0, last_updated: new Date().toISOString() };
+      }
+    }
+  }
+  
+  async function loadRecommendations() {
+    if ($currentUser) {
+      recommendations = await getPersonalizedRecommendations(
+        $currentUser.id,
+        userLocation.latitude,
+        userLocation.longitude
+      );
+    } else {
+      recommendations = [];
+    }
+  }
+  
+  async function loadNearbyPOIs() {
+    try {
+      // Obtenir la position de l'utilisateur avant de charger les POIs
+      await getUserLocation();
+      nearbyPOIs = await getNearbyPOIs(userLocation.latitude, userLocation.longitude, 10, 6);
+      console.log('POIs à proximité chargés:', nearbyPOIs);
+    } catch (error) {
+      console.error('Erreur lors du chargement des POIs à proximité:', error);
+      nearbyPOIs = [];
+    }
+  }
+  
+  async function getUserLocation() {
+    if (browser && navigator.geolocation) {
+      return new Promise<{ latitude: number, longitude: number }>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            userLocation = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            };
+            resolve(userLocation);
+          },
+          (error) => {
+            console.error('Erreur de géolocalisation:', error);
+            resolve(userLocation); // Utiliser la position par défaut en cas d'erreur
+          },
+          { timeout: 10000, enableHighAccuracy: true }
+        );
+      });
+    }
+    return userLocation;
   }
   
   function nextSplashStep() {
@@ -78,7 +150,23 @@
       goto('/onboarding');
     } else {
       // Ne pas rediriger, juste arrêter le chargement
+      await loadUserSteps();
       loading = false;
+    }
+  }
+  
+  function formatDuration(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h${mins > 0 ? mins : ''}` : `${mins}min`;
+  }
+  
+  function getDifficultyClass(difficulty: string): string {
+    switch (difficulty) {
+      case 'facile': return 'text-green-600';
+      case 'moyen': return 'text-orange-500';
+      case 'difficile': return 'text-red-600';
+      default: return 'text-green-600';
     }
   }
   
@@ -106,6 +194,18 @@
         img.src = src;
       });
     }
+    
+    // Charger les données de pas
+    await loadUserSteps();
+    
+    // Obtenir la position de l'utilisateur
+    await getUserLocation();
+    
+    // Charger les recommandations et les POIs à proximité
+    await Promise.all([
+      loadRecommendations(),
+      loadNearbyPOIs()
+    ]);
   });
 </script>
 
@@ -113,338 +213,174 @@
   <title>Moov - Explorez votre ville en famille</title>
 </svelte:head>
 
-{#if !authChecked}
-  <div class="fixed inset-0 bg-white flex items-center justify-center">
-    <Loading size="lg" />
-  </div>
-{:else if showSplash && !$currentUser}
-  <div 
-    class="fixed inset-0 bg-[#0082C3] flex flex-col items-center justify-center z-50"
-    transition:fade={{ duration: 300 }}
-  >
-    <!-- Logo et titre toujours visibles -->
-    <div class="absolute top-8 text-center">
-      <img src="/logo.svg" alt="Moov" class="w-16 h-16 mx-auto mb-2" />
-      <h1 class="text-white text-xl font-bold">Moov</h1>
+<!-- Page d'accueil principale -->
+<div class="min-h-screen bg-white">
+  {#if loading}
+    <div class="flex items-center justify-center min-h-screen">
+      <Loading />
     </div>
-    
-    <!-- Contenu de l'écran actuel -->
-    {#key splashStep}
-      <div 
-        class="max-w-md px-6 text-center"
-        in:fly={{ y: 50, duration: 400 }}
-        out:fly={{ y: -50, duration: 300 }}
-      >
-        <div class="bg-white/20 rounded-full p-4 inline-flex mb-6">
-          <span class="material-icons text-white text-4xl">{introScreens[splashStep].icon}</span>
-        </div>
-        
-        <h2 class="text-white text-3xl font-bold mb-3">{introScreens[splashStep].title}</h2>
-        <p class="text-white/90 text-lg mb-8">{introScreens[splashStep].description}</p>
-      </div>
-    {/key}
-    
-    <!-- Indicateurs de progression -->
-    <div class="flex space-x-2 mt-8">
-      {#each introScreens as _, i}
-        <div 
-          class="w-2.5 h-2.5 rounded-full transition-all duration-300 {i === splashStep ? 'bg-white' : 'bg-white/40'}"
-        ></div>
-      {/each}
+  {:else if showSplash}
+    <!-- Écrans d'introduction -->
+    <div class="min-h-screen flex flex-col bg-white">
+      <!-- Contenu des écrans d'introduction -->
     </div>
-    
-    <!-- Boutons de navigation -->
-    <div class="absolute bottom-12 w-full px-6 flex flex-col items-center">
-      <button 
-        class="bg-white text-[#0082C3] font-medium rounded-full py-3 px-8 w-full max-w-xs mb-4"
-        on:click={nextSplashStep}
-      >
-        {splashStep < introScreens.length - 1 ? 'Suivant' : 'Commencer'}
-      </button>
-      
-      {#if splashStep < introScreens.length - 1}
-        <button 
-          class="text-white/80 font-medium py-2"
-          on:click={skipIntro}
-        >
-          Passer
-        </button>
-      {/if}
-    </div>
-  </div>
-{:else if !$currentUser}
-  <!-- Page d'accueil pour les utilisateurs non connectés -->
-  <div class="min-h-screen flex flex-col">
-    <!-- Hero section -->
-    <div class="relative bg-[#0082C3] text-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
-        <div class="md:w-2/3">
-          <h1 class="text-4xl md:text-5xl font-bold mb-6">
-            Explorez votre ville en famille
+  {:else}
+    <!-- Page d'accueil -->
+    <div class="min-h-screen flex flex-col">
+      <!-- Hero section -->
+      <div class="relative bg-white text-gray-800">
+        <div class="mx-auto px-6 pt-8 pb-6">
+          <!-- Titre -->
+          <h1 class="text-3xl font-bold mb-10">
+            Bonjour {$currentUser?.first_name || 'Nicolas'} !
           </h1>
-          <p class="text-xl mb-8">
-            Découvrez des parcours personnalisés avec des histoires et des activités pour toute la famille.
-          </p>
-          <div class="flex flex-col sm:flex-row gap-4">
-            <Button 
-              variant="secondary" 
-              size="lg" 
-              on:click={() => goto('/login')}
-            >
-              Commencer l'aventure
-            </Button>
+          
+          <!-- Espace supplémentaire entre le titre et le rectangle bleu -->
+          <div class="h-16"></div>
+          
+          <!-- Carte de statistiques avec mascotte -->
+          <div class="relative mb-8">
+            <!-- Mascotte positionnée derrière le rectangle -->
+            <div class="absolute -top-14 right-8 z-0">
+              <img src="/icons/Mascotte Famille.png" alt="Mascotte" class="w-[76.05px] h-[117.53px] object-contain" />
+            </div>
+            
+            <div class="bg-[#D0EEF9] rounded-3xl p-6 relative z-10">
+              <div class="flex items-center">
+                <!-- Cercle de progression -->
+                <div class="relative w-24 h-24 mr-6 flex-shrink-0">
+                  <svg class="w-full h-full" viewBox="0 0 100 100">
+                    <circle 
+                      cx="50" 
+                      cy="50" 
+                      r="40" 
+                      fill="none" 
+                      stroke="#ffffff" 
+                      stroke-width="8"
+                    />
+                    <circle 
+                      cx="50" 
+                      cy="50" 
+                      r="40" 
+                      fill="none" 
+                      stroke="#4F46E5" 
+                      stroke-width="8"
+                      stroke-dasharray="251.2" 
+                      stroke-dashoffset="{dashOffset}" 
+                      transform="rotate(-90 50 50)"
+                    />
+                    <text x="50" y="45" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">{userSteps?.total_steps || 0}</text>
+                    <text x="50" y="65" text-anchor="middle" font-size="12" fill="#333">pas</text>
+                  </svg>
+                </div>
+                
+                <!-- Texte -->
+                <div>
+                  <h3 class="text-gray-600 font-medium text-lg">Marche quotidienne</h3>
+                  <p class="text-gray-700 font-medium">
+                    Tu as accompli<br>
+                    <span class="font-bold">{stepsPercentage}% de ton objectif</span><br>
+                    de marche quotidien !
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
       
-      <!-- Image décorative -->
-      <div class="absolute right-0 bottom-0 w-1/3 h-full hidden md:block">
-        <!-- Ici, vous pourriez ajouter une image décorative -->
-      </div>
-    </div>
-    
-    <!-- Features section -->
-    <div class="py-16 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl font-bold text-gray-900">Comment ça marche</h2>
-        </div>
-        
-        <div class="grid md:grid-cols-3 gap-8">
-          <div class="text-center">
-            <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <span class="material-icons text-[#0082C3] text-2xl">person</span>
-            </div>
-            <h3 class="text-xl font-medium mb-2">Créez votre profil</h3>
-            <p class="text-gray-600">Personnalisez vos préférences pour des parcours adaptés à vos envies.</p>
+      <!-- Contenu principal -->
+      <div class="flex-grow bg-white">
+        <!-- Section "Vos recommandations" -->
+        <section class="mb-8 px-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Vos recommandations</h2>
+            <a href="/recommendations" class="text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
           </div>
           
-          <div class="text-center">
-            <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <span class="material-icons text-[#0082C3] text-2xl">map</span>
-            </div>
-            <h3 class="text-xl font-medium mb-2">Choisissez un parcours</h3>
-            <p class="text-gray-600">Explorez des itinéraires adaptés à votre famille et vos centres d'intérêt.</p>
-          </div>
-          
-          <div class="text-center">
-            <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <span class="material-icons text-[#0082C3] text-2xl">directions_walk</span>
-            </div>
-            <h3 class="text-xl font-medium mb-2">Partez à l'aventure</h3>
-            <p class="text-gray-600">Suivez le parcours, découvrez des histoires et relevez des défis en famille.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- CTA section -->
-    <div class="bg-gray-100 py-16">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <h2 class="text-3xl font-bold text-gray-900 mb-6">Prêt à explorer votre ville ?</h2>
-        <Button 
-          variant="primary" 
-          size="lg" 
-          on:click={() => goto('/login')}
-        >
-          Créer un compte
-        </Button>
-      </div>
-    </div>
-    
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-8 mt-auto">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-          <div class="mb-4 md:mb-0">
-            <img src="/logo-white.svg" alt="Moov" class="h-8" />
-          </div>
-          <div class="text-sm text-gray-400">
-            &copy; {new Date().getFullYear()} Moov. Tous droits réservés.
-          </div>
-        </div>
-      </div>
-    </footer>
-  </div>
-{:else}
-  <!-- Page d'accueil pour les utilisateurs connectés -->
-  <div class="min-h-screen flex flex-col pt-16 pb-16">
-    <!-- Hero section -->
-    <div class="relative bg-[#0082C3] text-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div class="md:w-2/3">
-          <h1 class="text-4xl md:text-5xl font-bold mb-4">
-            Bonjour {$currentUser.first_name || 'explorateur'} !
-          </h1>
-          <p class="text-xl mb-6">
-            Prêt à explorer de nouveaux horizons aujourd'hui ?
-          </p>
-          <div class="flex flex-col sm:flex-row gap-4">
-            <Button 
-              variant="secondary" 
-              size="lg" 
-              on:click={() => goto('/map')}
-            >
-              Voir la carte
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Parcours recommandés -->
-    <div class="py-12 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 mb-6">Parcours recommandés</h2>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <!-- Carte de parcours 1 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-48 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Parcours" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-2">Découverte du Quartier Latin</h3>
-              <p class="text-gray-600 text-sm mb-3">Un parcours culturel au cœur de Paris</p>
-              <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-500">2.5 km • 1h30</span>
-                <Button variant="text" on:click={() => goto('/routes/1')}>Voir</Button>
+          <div class="flex overflow-x-auto space-x-4 pb-2">
+            {#each recommendations.slice(0, 4) as route}
+              <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                <div class="relative h-[120px]">
+                  <img src={route.image_url || "/placeholder.jpg"} alt={route.name} class="w-full h-full object-cover" />
+                </div>
+                <div class="p-2 h-[61.51px] flex flex-col justify-between">
+                  <h3 class="font-medium text-sm truncate">{route.name}</h3>
+                  <div class="flex justify-between text-xs">
+                    <span>{formatDuration(route.duration_minutes)}</span>
+                    <span class={getDifficultyClass(route.difficulty)}>{route.difficulty}</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            {:else}
+              {#each Array(2) as _, i}
+                <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                  <div class="h-[120px] bg-gray-200"></div>
+                  <div class="p-2 h-[61.51px]">
+                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div class="flex justify-between">
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/each}
           </div>
-          
-          <!-- Carte de parcours 2 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-48 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Parcours" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-2">Le Paris des Enfants</h3>
-              <p class="text-gray-600 text-sm mb-3">Activités ludiques pour toute la famille</p>
-              <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-500">3 km • 2h</span>
-                <Button variant="text" on:click={() => goto('/routes/2')}>Voir</Button>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Carte de parcours 3 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-48 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Parcours" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-2">Balade au bord de Seine</h3>
-              <p class="text-gray-600 text-sm mb-3">Découvrez Paris au fil de l'eau</p>
-              <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-500">4 km • 2h30</span>
-                <Button variant="text" on:click={() => goto('/routes/3')}>Voir</Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
         
-        <div class="mt-8 text-center">
-          <Button variant="outline" on:click={() => goto('/routes')}>
-            Voir tous les parcours
-          </Button>
-        </div>
+        <!-- Section des POIs à proximité -->
+        <section class="mb-8 px-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold flex items-center">
+              <span class="material-icons mr-2">near_me</span>
+              À proximité de vous
+            </h2>
+            <a href="/map" class="text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
+          </div>
+          
+          <div class="flex overflow-x-auto space-x-4 pb-2">
+            {#each nearbyPOIs as poi}
+              <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                <div class="relative h-[120px]">
+                  <img src={poi.image_url || "/placeholder.jpg"} alt={poi.name} class="w-full h-full object-cover" />
+                </div>
+                <div class="p-2 h-[61.51px] flex flex-col justify-between">
+                  <h3 class="font-medium text-sm truncate">{poi.name}</h3>
+                  <div class="flex justify-between text-xs">
+                    <span>
+                      {Math.round((poi.distance_km || 0) * 10) / 10} km • 
+                      {typeof poi.duration_minutes === 'number' ? poi.duration_minutes : 0} min
+                    </span>
+                    <span class={getDifficultyClass(poi.difficulty)}>{poi.difficulty}</span>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              {#each Array(2) as _, i}
+                <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
+                  <div class="h-[120px] bg-gray-200"></div>
+                  <div class="p-2 h-[61.51px]">
+                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div class="flex justify-between">
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                      <div class="h-3 bg-gray-200 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/each}
+          </div>
+        </section>
       </div>
     </div>
-    
-    <!-- Points d'intérêt à proximité -->
-    <div class="py-12 bg-gray-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 mb-6">À découvrir près de chez vous</h2>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <!-- POI 1 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-40 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Point d'intérêt" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-1">Tour Eiffel</h3>
-              <p class="text-gray-600 text-sm mb-3">Le monument emblématique de Paris</p>
-              <Button variant="text" size="sm" on:click={() => goto('/poi/48.8584,2.2945')}>
-                Voir les détails
-              </Button>
-            </div>
-          </div>
-          
-          <!-- POI 2 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-40 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Point d'intérêt" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-1">Musée du Louvre</h3>
-              <p class="text-gray-600 text-sm mb-3">Le plus grand musée d'art du monde</p>
-              <Button variant="text" size="sm" on:click={() => goto('/poi/48.8606,2.3376')}>
-                Voir les détails
-              </Button>
-            </div>
-          </div>
-          
-          <!-- POI 3 -->
-          <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <div class="h-40 bg-gray-200 relative">
-              <img 
-                src="/placeholder.jpg" 
-                alt="Point d'intérêt" 
-                class="w-full h-full object-cover" 
-              />
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-medium mb-1">Jardin du Luxembourg</h3>
-              <p class="text-gray-600 text-sm mb-3">Un havre de paix au cœur de Paris</p>
-              <Button variant="text" size="sm" on:click={() => goto('/poi/48.8462,2.3371')}>
-                Voir les détails
-              </Button>
-            </div>
-          </div>
-        </div>
-        
-        <div class="mt-8 text-center">
-          <Button variant="primary" on:click={() => goto('/map')}>
-            Explorer la carte
-          </Button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-8 mt-auto">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-          <div class="mb-4 md:mb-0">
-            <img src="/logo-white.svg" alt="Moov" class="h-8" />
-          </div>
-          <div class="text-sm text-gray-400">
-            &copy; {new Date().getFullYear()} Moov. Tous droits réservés.
-          </div>
-        </div>
-      </div>
-    </footer>
-  </div>
-{/if}
+  {/if}
+</div>

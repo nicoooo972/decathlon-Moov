@@ -1,4 +1,4 @@
-import { supabase } from '$lib/supabase';
+import { supabase } from '$lib/supabaseClient';
 import type { UserPreferences, UserRole, ActivityPreference, AgeGroup } from '$lib/types';
 import { writable } from 'svelte/store';
 
@@ -6,23 +6,34 @@ export const userPreferences = writable<UserPreferences | null>(null);
 
 // Récupérer les préférences de l'utilisateur
 export async function getUserPreferences(userId: string) {
-  const { data, error } = await supabase
-    .from('preferences')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-  
-  if (error && error.code !== 'PGRST116') {
-    // PGRST116 est l'erreur "No rows found", qu'on peut ignorer
-    throw error;
+  try {
+    const { data, error } = await supabase
+      .from('preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) {
+      // PGRST116 est l'erreur "No rows found", qu'on peut ignorer
+      if (error.code === 'PGRST116') {
+        console.log('Aucune préférence trouvée pour l\'utilisateur:', userId);
+        return null;
+      }
+      
+      console.error('Erreur lors de la récupération des préférences:', error);
+      return null;
+    }
+    
+    if (data) {
+      userPreferences.set(data as UserPreferences);
+      return data as UserPreferences;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Erreur lors de la récupération des préférences:', error);
+    return null;
   }
-  
-  if (data) {
-    userPreferences.set(data as UserPreferences);
-    return data as UserPreferences;
-  }
-  
-  return null;
 }
 
 // Créer ou mettre à jour les préférences

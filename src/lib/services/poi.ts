@@ -1,4 +1,4 @@
-import { supabase } from '$lib/supabase';
+import { supabase } from '$lib/supabaseClient';
 import type { RoutePoint, Product } from '$lib/types';
 
 // Récupérer tous les points d'intérêt

@@ -61,15 +61,54 @@
   :global(.primary-button) {
     background-color: #0082C3 !important;
   }
+  
+  .detail-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  
+  .detail-content {
+    flex: 1;
+    overflow-y: auto;
+  }
+  
+  .detail-image {
+    height: 220px;
+    width: 100%;
+    object-fit: cover;
+  }
+  
+  .tab-bar {
+    border-bottom: 1px solid #eee;
+    display: flex;
+  }
+  
+  .tab-button {
+    flex: 1;
+    padding: 12px 0;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  
+  .tab-button.active {
+    color: #0082C3;
+    border-bottom: 2px solid #0082C3;
+  }
 </style>
 
-<div class="bg-white rounded-t-xl shadow-xl overflow-hidden max-w-4xl mx-auto h-[90vh] flex flex-col">
+<div class="detail-container">
   <!-- Header avec image et bouton de fermeture -->
   <div class="relative">
     <img 
       src={point.image_url} 
       alt={point.name} 
-      class="w-full h-64 object-cover"
+      class="detail-image"
       on:error={handleImageError}
     />
     <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
@@ -96,9 +135,9 @@
   </div>
   
   <!-- Navigation par onglets -->
-  <div class="flex border-b">
+  <div class="tab-bar">
     <button 
-      class="flex-1 py-4 text-center font-medium text-sm {activeTab === 'info' ? 'text-[#0082C3] border-b-2 border-[#0082C3]' : 'text-gray-500'}"
+      class="tab-button {activeTab === 'info' ? 'active' : ''}"
       on:click={() => setTab('info')}
     >
       <span class="material-icons text-sm mr-1">info</span>
@@ -106,7 +145,7 @@
     </button>
     {#if point.activities && point.activities.length > 0}
       <button 
-        class="flex-1 py-4 text-center font-medium text-sm {activeTab === 'activities' ? 'text-[#0082C3] border-b-2 border-[#0082C3]' : 'text-gray-500'}"
+        class="tab-button {activeTab === 'activities' ? 'active' : ''}"
         on:click={() => setTab('activities')}
       >
         <span class="material-icons text-sm mr-1">hiking</span>
@@ -115,7 +154,7 @@
     {/if}
     {#if point.recommended_products && point.recommended_products.length > 0}
       <button 
-        class="flex-1 py-4 text-center font-medium text-sm {activeTab === 'products' ? 'text-[#0082C3] border-b-2 border-[#0082C3]' : 'text-gray-500'}"
+        class="tab-button {activeTab === 'products' ? 'active' : ''}"
         on:click={() => setTab('products')}
       >
         <span class="material-icons text-sm mr-1">shopping_bag</span>
@@ -125,11 +164,11 @@
   </div>
   
   <!-- Contenu principal avec défilement -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="detail-content">
     {#if activeTab === 'info'}
       <div class="p-5">
         <!-- Description principale -->
-        <p class="text-gray-700 mb-6 leading-relaxed text-base">{point.description}</p>
+        <p class="text-gray-700 mb-6 leading-relaxed">{point.description}</p>
         
         <!-- Détails supplémentaires -->
         {#if point.details && point.details.length > 0}
@@ -139,7 +178,7 @@
               {#each point.details as detail}
                 <li class="flex items-start">
                   <span class="material-icons text-[#0082C3] mr-2 text-sm mt-1">check_circle</span>
-                  <span class="text-gray-700 text-base">{detail}</span>
+                  <span class="text-gray-700">{detail}</span>
                 </li>
               {/each}
             </ul>
@@ -153,7 +192,7 @@
               <span class="material-icons text-gray-700 mr-2">schedule</span>
               <h3 class="text-lg font-semibold text-gray-800">Horaires</h3>
             </div>
-            <p class="text-gray-700 text-base">{point.opening_hours}</p>
+            <p class="text-gray-700">{point.opening_hours}</p>
           </div>
         {/if}
         
@@ -194,6 +233,26 @@
               <p class="text-sm text-gray-600">Restaurants sur place</p>
             </div>
           </div>
+        </div>
+        
+        <!-- Boutons d'action -->
+        <div class="flex gap-4 mt-6">
+          {#if point.website}
+            <button 
+              class="flex-1 bg-white border border-[#0082C3] text-[#0082C3] py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+              on:click={openWebsite}
+            >
+              <span class="material-icons mr-2">language</span>
+              Site web
+            </button>
+          {/if}
+          <button 
+            class="flex-1 bg-[#0082C3] text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+            on:click={openDirections}
+          >
+            <span class="material-icons mr-2">directions</span>
+            Y aller
+          </button>
         </div>
       </div>
     {:else if activeTab === 'activities'}
@@ -252,29 +311,6 @@
           {/each}
         </div>
       </div>
-    {/if}
-  </div>
-  
-  <!-- Barre d'actions fixe en bas -->
-  <div class="p-4 border-t flex flex-col space-y-3 bg-white">
-    {#if point.website}
-      <button 
-        class="w-full border border-gray-300 rounded-md min-h-[48px] px-4 py-2 text-base flex items-center justify-center"
-        on:click={openWebsite}
-      >
-        <span class="material-icons mr-1">language</span>
-        Site web
-      </button>
-    {/if}
-    
-    {#if point.position}
-      <button 
-        class="w-full bg-[#0082C3] text-white rounded-md min-h-[48px] px-4 py-2 text-base flex items-center justify-center"
-        on:click={openDirections}
-      >
-        <span class="material-icons mr-1">directions</span>
-        Y aller
-      </button>
     {/if}
   </div>
 </div> 

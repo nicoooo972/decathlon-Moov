@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "buildCommand": "./vercel-build.sh",
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": "sveltekit",
+  "devCommand": "npm run dev",
+  "outputDirectory": ".svelte-kit/output"
+} 

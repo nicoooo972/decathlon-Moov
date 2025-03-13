@@ -507,22 +507,32 @@
           title: poi.name
         }).addTo(map);
         
+        // Générer des identifiants uniques pour les boutons
+        const detailsBtnId = `details-button-${poi.id}-${Date.now()}`;
+        const directionsBtnId = `directions-button-${poi.id}-${Date.now()}`;
+        
+        // Préparer le contenu de l'image
+        const imageContent = poi.image_url ? 
+          `<div class="relative">
+            <img src="${poi.image_url}" 
+                 alt="${poi.name}" 
+                 class="w-full h-36 object-cover" />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+            <div class="absolute bottom-2 left-3 text-white">
+              <h3 class="text-xl font-bold">${poi.name}</h3>
+            </div>
+          </div>` : 
+          `<div class="bg-gray-100 p-4">
+            <h3 class="text-xl font-bold text-gray-800">${poi.name}</h3>
+          </div>`;
+        
         // Créer le contenu de la popup avec HTML
         const poiPopup = L.popup({
           maxWidth: 300,
           className: 'custom-popup'
         }).setContent(`
           <div class="p-0 overflow-hidden">
-            <div class="relative">
-              <img src="${poi.image_url}" 
-                   alt="${poi.name}" 
-                   class="w-full h-36 object-cover"
-                   onerror="this.src='/placeholder.jpg'" />
-              <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-              <div class="absolute bottom-2 left-3 text-white">
-                <h3 class="text-xl font-bold">${poi.name}</h3>
-              </div>
-            </div>
+            ${imageContent}
             
             <div class="p-3">
               <div class="flex items-center mb-3">
@@ -537,11 +547,11 @@
               </p>
               
               <div class="flex flex-col space-y-2">
-                <button id="details-button-${poi.id}" class="bg-[#0082C3] text-white py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
+                <button id="${detailsBtnId}" class="bg-[#0082C3] text-white py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
                   <span class="material-icons mr-1 text-sm">info</span>
                   Détails
                 </button>
-                <button id="directions-button-${poi.id}" class="border border-[#0082C3] text-[#0082C3] py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
+                <button id="${directionsBtnId}" class="border border-[#0082C3] text-[#0082C3] py-2 px-4 rounded-lg w-full font-medium flex items-center justify-center">
                   <span class="material-icons mr-1 text-sm">directions</span>
                   Y aller
                 </button>
@@ -553,26 +563,98 @@
         // Ajouter la popup au marqueur
         marker.bindPopup(poiPopup);
         
-        // Ajouter des écouteurs d'événements après l'ouverture de la popup
+        // Utiliser un seul écouteur d'événement pour le clic sur le marqueur
         marker.on('click', function() {
           marker.openPopup();
           
           // Attendre que le popup soit ajouté au DOM
           setTimeout(() => {
-            // Gérer le clic sur le bouton "Détails"
-            const detailsButton = document.getElementById(`details-button-${poi.id}`);
+            // Nettoyer les anciens écouteurs si nécessaire
+            const detailsButton = document.getElementById(detailsBtnId);
+            const directionsButton = document.getElementById(directionsBtnId);
+            
             if (detailsButton) {
-              detailsButton.addEventListener('click', () => {
-                const lat = marker.getLatLng().lat;
-                const lng = marker.getLatLng().lng;
-                goto(`/poi/${lat},${lng}`);
+              // Supprimer les anciens écouteurs pour éviter les doublons
+              const newDetailsButton = detailsButton.cloneNode(true);
+              detailsButton.parentNode?.replaceChild(newDetailsButton, detailsButton);
+              
+              // Ajouter le nouvel écouteur pour afficher les détails dans une popup
+              newDetailsButton.addEventListener('click', async () => {
+                try {
+                  // Fermer la popup Leaflet
+                  marker.closePopup();
+                  
+                  // Récupérer les données complètes du POI
+                  const lat = marker.getLatLng().lat;
+                  const lng = marker.getLatLng().lng;
+                  
+                  // Créer un objet point pour la popup de détail
+                  selectedPoint = {
+                    position: { lat, lng },
+                    name: poi.name,
+                    description: poi.description,
+                    image_url: poi.image_url,
+                    opening_hours: poi.opening_hours,
+                    website: poi.website,
+                    recommended_products: [],
+                    details: [],
+                    activities: []
+                  };
+                  
+                  // Charger les détails supplémentaires si disponibles
+                  if (poi.id) {
+                    try {
+                      const { data: details } = await supabase
+                        .from('poi_details')
+                        .select('detail')
+                        .eq('poi_id', poi.id);
+                      
+                      if (details && details.length > 0) {
+                        selectedPoint.details = details.map(d => d.detail);
+                      }
+                      
+                      const { data: activities } = await supabase
+                        .from('poi_activities')
+                        .select('activity')
+                        .eq('poi_id', poi.id);
+                      
+                      if (activities && activities.length > 0) {
+                        selectedPoint.activities = activities.map(a => a.activity);
+                      }
+                      
+                      const { data: products } = await supabase
+                        .from('poi_products')
+                        .select('product_id, products(*)')
+                        .eq('poi_id', poi.id);
+                      
+                      if (products && products.length > 0) {
+                        selectedPoint.recommended_products = products.map(p => ({
+                          id: p.products?.id || 0,
+                          name: p.products?.name || 'Produit',
+                          image_url: p.products?.image_url || '/placeholder.jpg',
+                          price: p.products?.price || 0,
+                          url: p.products?.url || '#',
+                          category: p.products?.category || undefined
+                        }));
+                      }
+                    } catch (error) {
+                      console.error('Erreur lors du chargement des détails du POI:', error);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Erreur lors de l\'affichage des détails:', error);
+                  showNotification('Impossible de charger les détails', 'error');
+                }
               });
             }
             
-            // Gérer le clic sur le bouton "Y aller"
-            const directionsButton = document.getElementById(`directions-button-${poi.id}`);
             if (directionsButton) {
-              directionsButton.addEventListener('click', () => {
+              // Supprimer les anciens écouteurs pour éviter les doublons
+              const newDirectionsButton = directionsButton.cloneNode(true);
+              directionsButton.parentNode?.replaceChild(newDirectionsButton, directionsButton);
+              
+              // Ajouter le nouvel écouteur
+              newDirectionsButton.addEventListener('click', () => {
                 if (navigator.geolocation) {
                   navigator.geolocation.getCurrentPosition(
                     (position) => {
@@ -697,16 +779,34 @@
   }
   
   .point-detail-container {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    position: fixed;
+    inset: 0;
     z-index: 1000;
     padding: 16px;
-    height: 90vh;
     display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+  
+  .point-detail-wrapper {
+    width: 95%;
+    max-width: 600px;
+    max-height: 90vh;
+    border-radius: 12px;
+    overflow: hidden;
+    animation: popup-appear 0.3s ease-out;
+  }
+  
+  @keyframes popup-appear {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
   
   /* Styles pour les marqueurs personnalisés */
@@ -1024,10 +1124,12 @@
   <!-- Détails du point sélectionné -->
   {#if selectedPoint}
     <div class="point-detail-container" transition:fade={{ duration: 200 }}>
-      <RoutePointDetail 
-        point={selectedPoint} 
-        onClose={closePointDetail}
-      />
+      <div class="point-detail-wrapper">
+        <RoutePointDetail 
+          point={selectedPoint} 
+          onClose={closePointDetail}
+        />
+      </div>
     </div>
   {/if}
 </div> 

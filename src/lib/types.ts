@@ -63,4 +63,36 @@ export interface Product {
   price: number;
   url: string;
   category?: string;
+}
+
+export interface Track {
+    id: string;
+    user_id: string;
+    route_id?: number;
+    route?: {
+        name: string;
+        distance: number;
+        elevation_gain: number;
+    };
+    start_time: string;
+    end_time?: string;
+    distance?: number;
+    duration?: number;
+    average_speed?: number;
+    max_speed?: number;
+    elevation_gain?: number;
+    elevation_loss?: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface TrackPoint {
+    id?: string;
+    track_id: string;
+    latitude: number;
+    longitude: number;
+    elevation?: number | null;
+    speed?: number | null;
+    time: string;
+    created_at?: string;
 } 

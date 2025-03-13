@@ -38,6 +38,22 @@
   let touchEndY: number = 0;
   let poiPanelElement: HTMLDivElement;
   
+  // Variables pour le suivi du trajet
+  let isNavigating: boolean = false; // Indique si la navigation est active
+  let isTracking: boolean = false; // Indique si l'enregistrement du trajet est actif
+  let navigationPath: google.maps.Polyline | null = null; // Chemin de navigation
+  let directionsRenderer: google.maps.DirectionsRenderer | null = null; // Renderer pour les directions
+  let trackingPath: google.maps.Polyline[] = []; // Chemins enregistrés pendant le suivi
+  let trackingCoordinates: google.maps.LatLng[] = []; // Coordonnées enregistrées pendant le suivi
+  let startTime: number | null = null; // Heure de début du suivi
+  let elapsedTime: number = 0; // Temps écoulé en secondes
+  let distance: number = 0; // Distance parcourue en km
+  let stepCount: number = 0; // Nombre de pas (estimation)
+  let trackingInterval: number | null = null; // Intervalle pour mettre à jour le temps écoulé
+  let destinationMarker: google.maps.Marker | null = null; // Marqueur de destination
+  let navigationDestination: ExtendedRoutePoint | null = null; // Destination de navigation
+  let navigationDistance: string = ""; // Distance jusqu'à la destination
+  
   // Récupérer l'ID de l'itinéraire depuis les paramètres d'URL
   $: {
     const routeParam = $page.url.searchParams.get('route');
@@ -519,6 +535,11 @@
     // Mettre à jour ou créer le marqueur de l'utilisateur
     if (userMarker) {
       userMarker.setPosition(pos);
+      
+      // Si le suivi est actif, mettre à jour la position
+      if (isTracking) {
+        updateTrackingPosition(new google.maps.LatLng(pos.lat, pos.lng));
+      }
     } else {
       userMarker = new google.maps.Marker({
         position: pos,
@@ -648,22 +669,295 @@
   
   // Démarrer la navigation vers un POI
   function startNavigation(poi: ExtendedRoutePoint) {
-    if (!poi) return;
+    if (!poi || !userMarker || !map) return;
     
-    // Pour l'instant, on affiche juste une notification
-    showNotification(`Navigation vers ${poi.name} démarrée`, 'success');
+    // Vérifier que la position de l'utilisateur est disponible
+    const userPosition = userMarker.getPosition();
+    if (!userPosition) {
+      showNotification('Position utilisateur non disponible', 'error');
+      return;
+    }
+    
+    // Nettoyer toute navigation précédente
+    clearNavigation();
+    
+    // Définir l'état de navigation
+    isNavigating = true;
+    
+    // Créer un marqueur de destination
+    destinationMarker = new google.maps.Marker({
+      position: poi.position,
+      map: map,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: '#0082C3',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+        scale: 12
+      },
+      zIndex: 1000
+    });
+    
+    try {
+      // Utiliser le service de directions de Google Maps pour obtenir l'itinéraire
+      const directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: true, // Ne pas afficher les marqueurs par défaut
+        polylineOptions: {
+          strokeColor: '#0082C3',
+          strokeOpacity: 0.8,
+          strokeWeight: 5
+        },
+        map: map // Associer directement la carte au renderer
+      });
+      
+      // Demander l'itinéraire
+      directionsService.route({
+        origin: userPosition,
+        destination: poi.position,
+        travelMode: google.maps.TravelMode.WALKING
+      }, (response, status) => {
+        if (status === google.maps.DirectionsStatus.OK && response) {
+          // Afficher l'itinéraire sur la carte
+          if (directionsRenderer) {
+            directionsRenderer.setDirections(response);
+          }
+          
+          // Ajuster la vue pour montrer tout l'itinéraire
+          if (map) {
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend(userPosition);
+            bounds.extend(poi.position);
+            map.fitBounds(bounds);
+            
+            // Ajouter un peu de padding pour une meilleure vue
+            map.fitBounds(bounds, 50); // 50 pixels de padding
+          }
+          
+          // Afficher le panneau de navigation
+          if (response.routes && response.routes[0] && response.routes[0].legs && response.routes[0].legs[0]) {
+            showNavigationPanel(poi, response.routes[0].legs[0].distance?.text || "Distance inconnue");
+          } else {
+            showNavigationPanel(poi, "Distance inconnue");
+          }
+        } else {
+          console.error('Erreur lors du calcul de l\'itinéraire:', status);
+          
+          // En cas d'erreur d'API, créer un itinéraire direct simple
+          createSimpleRoute(userPosition, poi.position);
+          
+          // Afficher quand même le panneau de navigation avec une distance estimée
+          const estimatedDistance = calculateDistance(
+            userPosition.lat() || 0,
+            userPosition.lng() || 0,
+            poi.position.lat,
+            poi.position.lng
+          ).toFixed(1) + " km";
+          
+          showNavigationPanel(poi, estimatedDistance);
+        }
+      });
+    } catch (error) {
+      console.error('Erreur lors de l\'initialisation de la navigation:', error);
+      
+      // En cas d'erreur, créer un itinéraire direct simple
+      createSimpleRoute(userPosition, poi.position);
+      
+      // Afficher quand même le panneau de navigation avec une distance estimée
+      const estimatedDistance = calculateDistance(
+        userPosition.lat() || 0,
+        userPosition.lng() || 0,
+        poi.position.lat,
+        poi.position.lng
+      ).toFixed(1) + " km";
+      
+      showNavigationPanel(poi, estimatedDistance);
+    }
     
     // Fermer le panneau POI
     clearSelectedPOI();
+  }
+  
+  // Créer un itinéraire simple (ligne droite) en cas d'erreur de l'API Directions
+  function createSimpleRoute(origin: google.maps.LatLng, destination: google.maps.LatLngLiteral) {
+    if (!map) return;
     
-    // Centrer la carte sur le POI
-    if (map && poi.position) {
-      map.setCenter(poi.position);
-      map.setZoom(16);
+    // Créer un chemin direct entre l'origine et la destination
+    navigationPath = new google.maps.Polyline({
+      path: [
+        origin,
+        new google.maps.LatLng(destination.lat, destination.lng)
+      ],
+      geodesic: true,
+      strokeColor: '#0082C3',
+      strokeOpacity: 0.8,
+      strokeWeight: 5,
+      map: map
+    });
+    
+    // Ajuster la vue pour montrer tout l'itinéraire
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(origin);
+    bounds.extend(destination);
+    map.fitBounds(bounds, 50); // 50 pixels de padding
+  }
+  
+  // Fonction pour gérer les erreurs de chargement d'image
+  function handleImageError(event: Event): void {
+    const imgElement = event.target as HTMLImageElement;
+    if (imgElement) {
+      imgElement.src = 'https://via.placeholder.com/200x150?text=Image+non+disponible';
+    }
+  }
+  
+  // Afficher le panneau de navigation
+  function showNavigationPanel(destination: ExtendedRoutePoint, distanceText: string) {
+    // Stocker les informations de destination
+    navigationDestination = destination;
+    navigationDistance = distanceText;
+    
+    // Afficher une notification
+    showNotification(`Navigation vers ${destination.name} (${distanceText})`, 'success');
+  }
+  
+  // Nettoyer la navigation
+  function clearNavigation() {
+    isNavigating = false;
+    
+    // Arrêter le suivi si actif
+    if (isTracking) {
+      stopTracking();
     }
     
-    // TODO: Implémenter la navigation réelle
-    // Cette fonction sera complétée dans la prochaine étape
+    // Supprimer le renderer de directions
+    if (directionsRenderer) {
+      directionsRenderer.setMap(null);
+      directionsRenderer = null;
+    }
+    
+    // Supprimer le chemin de navigation
+    if (navigationPath) {
+      navigationPath.setMap(null);
+      navigationPath = null;
+    }
+    
+    // Supprimer le marqueur de destination
+    if (destinationMarker) {
+      destinationMarker.setMap(null);
+      destinationMarker = null;
+    }
+  }
+  
+  // Démarrer l'enregistrement du trajet
+  function startTracking() {
+    if (!isNavigating || isTracking || !userMarker || !map) return;
+    
+    isTracking = true;
+    startTime = Date.now();
+    trackingCoordinates = [userMarker.getPosition() as google.maps.LatLng];
+    stepCount = 0;
+    distance = 0;
+    
+    // Créer un nouveau chemin pour le suivi
+    const newPath = new google.maps.Polyline({
+      path: trackingCoordinates,
+      geodesic: true,
+      strokeColor: '#FF0000',
+      strokeOpacity: 1.0,
+      strokeWeight: 4,
+      map: map
+    });
+    
+    trackingPath.push(newPath);
+    
+    // Mettre à jour le temps écoulé toutes les secondes
+    trackingInterval = window.setInterval(() => {
+      if (startTime) {
+        elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+      }
+    }, 1000);
+    
+    showNotification('Enregistrement du trajet démarré', 'success');
+  }
+  
+  // Arrêter l'enregistrement du trajet
+  function stopTracking() {
+    if (!isTracking) return;
+    
+    isTracking = false;
+    
+    // Arrêter l'intervalle de mise à jour du temps
+    if (trackingInterval) {
+      clearInterval(trackingInterval);
+      trackingInterval = null;
+    }
+    
+    // Calculer les statistiques finales
+    const endTime = Date.now();
+    const durationMs = startTime ? endTime - startTime : 0;
+    const durationMinutes = Math.floor(durationMs / 60000);
+    
+    // Enregistrer les données du trajet (à implémenter)
+    saveTrackingData({
+      coordinates: trackingCoordinates,
+      distance: distance,
+      duration: durationMinutes,
+      steps: stepCount,
+      startTime: startTime || 0,
+      endTime: endTime
+    });
+    
+    showNotification(`Trajet terminé: ${distance.toFixed(2)} km en ${formatTime(elapsedTime)}`, 'success');
+  }
+  
+  // Enregistrer les données du trajet
+  function saveTrackingData(trackData: any) {
+    // Cette fonction sera implémentée pour sauvegarder les données du trajet
+    console.log('Données du trajet:', trackData);
+    // TODO: Sauvegarder les données dans la base de données
+  }
+  
+  // Mettre à jour la position pendant le suivi
+  function updateTrackingPosition(position: google.maps.LatLng) {
+    if (!isTracking || trackingPath.length === 0) return;
+    
+    // Ajouter la nouvelle position aux coordonnées
+    trackingCoordinates.push(position);
+    
+    // Mettre à jour le chemin
+    const currentPath = trackingPath[trackingPath.length - 1];
+    currentPath.setPath(trackingCoordinates);
+    
+    // Calculer la distance parcourue
+    if (trackingCoordinates.length >= 2) {
+      const lastIndex = trackingCoordinates.length - 1;
+      const newSegmentDistance = calculateDistance(
+        trackingCoordinates[lastIndex - 1].lat(),
+        trackingCoordinates[lastIndex - 1].lng(),
+        trackingCoordinates[lastIndex].lat(),
+        trackingCoordinates[lastIndex].lng()
+      );
+      
+      distance += newSegmentDistance;
+      
+      // Estimer le nombre de pas (environ 1300 pas par km en moyenne)
+      const stepsInSegment = Math.floor(newSegmentDistance * 1300);
+      stepCount += stepsInSegment;
+    }
+  }
+  
+  // Formater le temps en heures:minutes:secondes
+  function formatTime(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    return [
+      hours.toString().padStart(2, '0'),
+      minutes.toString().padStart(2, '0'),
+      secs.toString().padStart(2, '0')
+    ].join(':');
   }
 </script>
 
@@ -770,7 +1064,12 @@
               <!-- Image miniature du POI -->
               {#if selectedPOI.image_url}
                 <div class="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden">
-                  <img src={selectedPOI.image_url} alt={selectedPOI.name} class="w-full h-full object-cover">
+                  <img 
+                    src={selectedPOI.image_url} 
+                    alt={selectedPOI.name} 
+                    class="w-full h-full object-cover"
+                    on:error={handleImageError}
+                  >
                 </div>
               {/if}
               
@@ -807,7 +1106,12 @@
               <!-- Image du POI -->
               {#if selectedPOI.image_url}
                 <div class="w-full">
-                  <img src={selectedPOI.image_url} alt={selectedPOI.name} class="w-full h-48 object-cover">
+                  <img 
+                    src={selectedPOI.image_url} 
+                    alt={selectedPOI.name} 
+                    class="w-full h-48 object-cover"
+                    on:error={handleImageError}
+                  >
                 </div>
               {/if}
             </div>
@@ -874,7 +1178,12 @@
                     {#each selectedPOI.recommended_products as product}
                       <div class="bg-gray-50 rounded-lg p-2">
                         {#if product.image_url}
-                          <img src={product.image_url} alt={product.name} class="w-full h-24 object-contain mb-2">
+                          <img 
+                            src={product.image_url} 
+                            alt={product.name} 
+                            class="w-full h-24 object-contain mb-2"
+                            on:error={handleImageError}
+                          >
                         {/if}
                         <div class="text-xs font-medium">{product.name}</div>
                         {#if product.price}
@@ -930,6 +1239,70 @@
             <button class="flex flex-col items-center justify-center py-3 text-blue-600">
               <span class="material-icons text-2xl mb-1">call</span>
               <span class="text-xs">Appeler</span>
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+    
+    <!-- Panneau de navigation et de suivi -->
+    {#if isNavigating && navigationDestination}
+      <div class="absolute bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden z-20">
+        <div class="p-4 bg-[#0082C3] text-white flex justify-between items-center">
+          <h2 class="text-lg font-bold">Navigation vers {navigationDestination.name}</h2>
+          <button 
+            class="text-white hover:text-gray-200 transition-colors"
+            on:click={clearNavigation}
+            aria-label="Fermer"
+          >
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        
+        <div class="p-4">
+          {#if !isTracking}
+            <!-- Informations sur la destination -->
+            <div class="mb-4">
+              <div class="flex items-center mb-2">
+                <span class="material-icons text-blue-600 mr-2">place</span>
+                <span class="text-gray-700">{navigationDestination.name}</span>
+              </div>
+              <div class="flex items-center mb-2">
+                <span class="material-icons text-blue-600 mr-2">directions_walk</span>
+                <span class="text-gray-700">Distance: {navigationDistance}</span>
+              </div>
+            </div>
+          {/if}
+          
+          {#if isTracking}
+            <!-- Affichage des statistiques pendant le suivi -->
+            <div class="grid grid-cols-3 gap-4 mb-4">
+              <div class="text-center">
+                <div class="text-sm text-gray-500">Distance</div>
+                <div class="font-semibold">{distance.toFixed(2)} km</div>
+              </div>
+              <div class="text-center">
+                <div class="text-sm text-gray-500">Temps</div>
+                <div class="font-semibold">{formatTime(elapsedTime)}</div>
+              </div>
+              <div class="text-center">
+                <div class="text-sm text-gray-500">Pas</div>
+                <div class="font-semibold">{stepCount}</div>
+              </div>
+            </div>
+            
+            <button 
+              class="w-full bg-red-600 text-white text-center py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+              on:click={stopTracking}
+            >
+              Arrêter
+            </button>
+          {:else}
+            <button 
+              class="w-full bg-[#0082C3] text-white text-center py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
+              on:click={startTracking}
+            >
+              Démarrer le suivi
             </button>
           {/if}
         </div>

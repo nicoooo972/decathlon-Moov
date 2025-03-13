@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { currentUser } from '$lib/services/auth';
   import { hasCompletedPreferences } from '$lib/services/preferences';
+  import { getUserSteps, type UserSteps } from '$lib/services/steps';
   import { fade, fly } from 'svelte/transition';
   import Loading from '$lib/components/ui/loading.svelte';
   import Button from '$lib/components/ui/button.svelte';
@@ -12,6 +13,9 @@
   let showSplash = true;
   let splashStep = 0;
   let authChecked = false;
+  let userSteps: UserSteps | null = null;
+  let stepsGoal = 10000; // Objectif quotidien par défaut
+  let stepsPercentage = 0;
   
   // Contenu des écrans d'introduction
   const introScreens = [
@@ -39,6 +43,23 @@
   $: if ($currentUser) {
     showSplash = false;
     checkUserPreferences();
+  }
+  
+  // Calculer le pourcentage de l'objectif atteint
+  $: if (userSteps) {
+    stepsPercentage = Math.min(100, Math.round((userSteps.total_steps / stepsGoal) * 100));
+  }
+  
+  // Calculer le dashoffset pour l'anneau de progression
+  $: dashOffset = 251.2 - (251.2 * stepsPercentage / 100);
+  
+  async function loadUserSteps() {
+    if ($currentUser) {
+      userSteps = await getUserSteps();
+      if (!userSteps) {
+        userSteps = { total_steps: 0, last_updated: new Date().toISOString() };
+      }
+    }
   }
   
   function nextSplashStep() {
@@ -78,6 +99,7 @@
       goto('/onboarding');
     } else {
       // Ne pas rediriger, juste arrêter le chargement
+      await loadUserSteps();
       loading = false;
     }
   }
@@ -106,6 +128,9 @@
         img.src = src;
       });
     }
+    
+    // Charger les données de pas
+    await loadUserSteps();
   });
 </script>
 
@@ -166,10 +191,10 @@
                       stroke="#4F46E5" 
                       stroke-width="8"
                       stroke-dasharray="251.2" 
-                      stroke-dashoffset="150.72" 
+                      stroke-dashoffset="{dashOffset}" 
                       transform="rotate(-90 50 50)"
                     />
-                    <text x="50" y="45" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">4 000</text>
+                    <text x="50" y="45" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">{userSteps?.total_steps || 0}</text>
                     <text x="50" y="65" text-anchor="middle" font-size="12" fill="#333">pas</text>
                   </svg>
                 </div>
@@ -179,7 +204,7 @@
                   <h3 class="text-gray-600 font-medium text-lg">Marche quotidienne</h3>
                   <p class="text-gray-700 font-medium">
                     Tu as accompli<br>
-                    <span class="font-bold">40% de ton objectif</span><br>
+                    <span class="font-bold">{stepsPercentage}% de ton objectif</span><br>
                     de marche quotidien !
                   </p>
                 </div>

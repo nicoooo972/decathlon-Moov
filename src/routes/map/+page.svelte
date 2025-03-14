@@ -134,12 +134,12 @@
       zoom: 13,
       center: { lat: 48.8566, lng: 2.3522 }, // Paris par défaut
       mapTypeId: google.maps.MapTypeId.ROADMAP,
-      zoomControl: true,
-      mapTypeControl: true,
-      scaleControl: true,
+      zoomControl: false,
+      mapTypeControl: false,
+      scaleControl: false,
       streetViewControl: false,
       rotateControl: false,
-      fullscreenControl: true,
+      fullscreenControl: false,
       clickableIcons: false, // Désactiver les POIs natifs de Google Maps
       styles: [
         {
@@ -159,10 +159,6 @@
       const centerControl = createCenterControl();
       centerControlDiv.appendChild(centerControl);
       map.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(centerControlDiv);
-      
-      // Ajouter une légende à la carte
-      const legendDiv = createLegendControl();
-      map.controls[google.maps.ControlPosition.LEFT_BOTTOM].push(legendDiv);
       
       // Ajouter un gestionnaire de clic sur la carte pour fermer le panneau POI
       map.addListener('click', () => {
@@ -206,38 +202,6 @@
     });
     
     return controlButton;
-  }
-  
-  function createLegendControl() {
-    const legendDiv = document.createElement('div');
-    legendDiv.className = 'bg-white p-3 m-3 rounded-lg shadow-lg';
-    legendDiv.style.maxWidth = '200px';
-    
-    legendDiv.innerHTML = `
-      <div class="text-sm font-bold mb-2">Légende</div>
-      <div class="flex items-center mb-2">
-        <div style="width: 16px; height: 16px; border-radius: 50%; background-color: #FF0000; margin-right: 8px;"></div>
-        <span class="text-xs">Votre position</span>
-      </div>
-      <div class="flex items-center mb-2">
-        <div style="width: 16px; height: 16px; border-radius: 50%; background-color: #0082C3; margin-right: 8px;"></div>
-        <span class="text-xs">Départ d'itinéraire</span>
-      </div>
-      <div class="flex items-center mb-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#0082C3" style="margin-right: 8px;">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-        </svg>
-        <span class="text-xs">POI sur itinéraire</span>
-      </div>
-      <div class="flex items-center">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FF5722" style="margin-right: 8px;">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-        </svg>
-        <span class="text-xs">Point d'intérêt</span>
-      </div>
-    `;
-    
-    return legendDiv;
   }
   
   async function loadRoutes() {
@@ -1342,6 +1306,21 @@
         </div>
       </div>
     {/if}
+  </div>
+
+  <!-- Barre de recherche -->
+  <div class="absolute bottom-32 left-4 right-4 z-20 flex justify-center gap-2">
+    <div class="w-[263px] h-[56px] bg-white rounded-lg shadow-lg flex items-center px-4">
+      <span class="material-icons text-gray-400 mr-2">search</span>
+      <input 
+        type="text" 
+        placeholder="Rechercher un lieu" 
+        class="w-full bg-transparent border-none focus:outline-none text-gray-800"
+      >
+    </div>
+    <button class="w-[56px] h-[56px] bg-white rounded-lg shadow-lg flex items-center justify-center">
+      <img src="/icons_maps/Vector.svg" alt="Filtres" class="w-5 h-5">
+    </button>
   </div>
 </div>
 

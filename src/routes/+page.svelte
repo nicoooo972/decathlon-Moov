@@ -125,6 +125,7 @@
       return new Promise<{ latitude: number, longitude: number }>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(
           (position) => {
+            console.log('Géolocalisation réussie:', position.coords);
             userLocation = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude
@@ -133,12 +134,33 @@
           },
           (error) => {
             console.error('Erreur de géolocalisation:', error);
-            resolve(userLocation); // Utiliser la position par défaut en cas d'erreur
+            // Afficher un message d'erreur spécifique selon le code d'erreur
+            switch(error.code) {
+              case error.PERMISSION_DENIED:
+                console.error('L\'utilisateur a refusé la demande de géolocalisation');
+                break;
+              case error.POSITION_UNAVAILABLE:
+                console.error('Les informations de localisation sont indisponibles');
+                break;
+              case error.TIMEOUT:
+                console.error('La demande de géolocalisation a expiré');
+                break;
+              default:
+                console.error('Une erreur inconnue s\'est produite');
+                break;
+            }
+            // Utiliser la position par défaut en cas d'erreur
+            resolve(userLocation);
           },
-          { timeout: 10000, enableHighAccuracy: true }
+          { 
+            timeout: 10000, 
+            enableHighAccuracy: true,
+            maximumAge: 0 
+          }
         );
       });
     }
+    console.log('Géolocalisation non disponible, utilisation de la position par défaut:', userLocation);
     return userLocation;
   }
   
@@ -209,6 +231,19 @@
       showSecondSplash = false;
       showSplash = false;
       checkUserPreferences();
+      
+      // Charger les données de pas
+      await loadUserSteps();
+      
+      // Obtenir la position de l'utilisateur
+      await getUserLocation();
+      
+      // Charger les recommandations et les POIs à proximité
+      await Promise.all([
+        loadRecommendations(),
+        loadNearbyPOIs()
+      ]);
+      
       return; // Sortir de la fonction pour éviter d'exécuter le reste du code
     }
     
@@ -245,21 +280,6 @@
         const img = new Image();
         img.src = src;
       });
-    }
-    
-    // Charger les données uniquement si l'utilisateur est connecté
-    if ($currentUser) {
-      // Charger les données de pas
-      await loadUserSteps();
-      
-      // Obtenir la position de l'utilisateur
-      await getUserLocation();
-      
-      // Charger les recommandations et les POIs à proximité
-      await Promise.all([
-        loadRecommendations(),
-        loadNearbyPOIs()
-      ]);
     }
   });
 </script>
@@ -305,7 +325,7 @@
         <div class="mx-auto px-6 pt-8 pb-6">
           <!-- Titre -->
           <h1 class="text-3xl font-bold mb-10">
-            Bonjour {$currentUser?.first_name || 'Nicolas'} !
+            Bonjour {$currentUser?.first_name || 'Utilisateur'} !
           </h1>
           
           <!-- Espace supplémentaire entre le titre et le rectangle bleu -->

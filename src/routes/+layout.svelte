@@ -35,7 +35,13 @@
 				}
 			} else {
 				// Pas de session valide, initialiser l'auth normalement
-				initializeAuth();
+				await initializeAuth();
+				
+				// Si on est sur une page protégée et qu'il n'y a pas de session, rediriger vers login
+				// sauf si on est déjà sur une page d'auth ou d'onboarding
+				if (!isAuthPage && !isOnboardingPage && !$page.url.pathname.startsWith('/preferences')) {
+					goto('/login');
+				}
 			}
 		};
 		
@@ -44,6 +50,7 @@
 		
 		// Écouter les changements d'authentification
 		const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+			console.log('Auth state change:', event);
 			if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
 				await refreshUserData();
 			} else if (event === 'SIGNED_OUT') {

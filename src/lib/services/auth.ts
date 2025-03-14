@@ -1,5 +1,6 @@
 import { supabase } from '$lib/supabaseClient';
-import type { User } from '@supabase/supabase-js';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import type { User } from '$lib/types';
 import { goto } from '$app/navigation';
 import { writable } from 'svelte/store';
 
@@ -7,12 +8,20 @@ export const currentUser = writable<User | null>(null);
 
 // Initialize the store with the current session
 supabase.auth.getSession().then(({ data: { session } }) => {
-  currentUser.set(session?.user ?? null);
+  if (session?.user) {
+    refreshUserData();
+  } else {
+    currentUser.set(null);
+  }
 });
 
 // Listen for auth changes
 supabase.auth.onAuthStateChange((_event, session) => {
-  currentUser.set(session?.user ?? null);
+  if (session?.user) {
+    refreshUserData();
+  } else {
+    currentUser.set(null);
+  }
 });
 
 // Initialiser l'utilisateur au chargement
@@ -21,7 +30,9 @@ export async function initializeAuth() {
   
   if (data.session) {
     await refreshUserData();
+    return true;
   }
+  return false;
 }
 
 // Récupérer les données de l'utilisateur
@@ -44,6 +55,7 @@ export async function refreshUserData() {
         avatar_url: data.avatar_url,
         created_at: user.created_at || new Date().toISOString()
       });
+      return true;
     } else {
       // Profil non trouvé, créer un profil vide via la fonction RPC
       try {
@@ -70,6 +82,7 @@ export async function refreshUserData() {
             avatar_url: newProfile.avatar_url,
             created_at: user.created_at || new Date().toISOString()
           });
+          return true;
         } else {
           // Fallback si le profil n'est toujours pas trouvé
           currentUser.set({
@@ -77,6 +90,7 @@ export async function refreshUserData() {
             email: user.email || '',
             created_at: user.created_at || new Date().toISOString()
           });
+          return true;
         }
       } catch (error) {
         console.error('Erreur lors de la création du profil:', error);
@@ -86,10 +100,12 @@ export async function refreshUserData() {
           email: user.email || '',
           created_at: user.created_at || new Date().toISOString()
         });
+        return true;
       }
     }
   } else {
     currentUser.set(null);
+    return false;
   }
 }
 

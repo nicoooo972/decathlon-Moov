@@ -84,14 +84,11 @@
     }
   }
   
+  // Récupérer les données de la page
+  export let data;
+
   onMount(() => {
     if (!browser) return;
-    
-    // Vérifier si l'utilisateur est connecté
-    if (!$currentUser) {
-      goto('/login');
-      return;
-    }
     
     // Désactiver le scroll sur le body quand on est sur la page carte
     document.body.style.overflow = 'hidden';
@@ -999,8 +996,8 @@
       showNotification('Balade sauvegardée avec succès!', 'success');
       closeCompletionScreen();
       
-      // Rediriger vers la page des balades ou une autre page
-      // goto('/walks'); // Décommenter si vous avez une page de balades
+      // Rediriger vers la page profil
+      window.location.href = '/profile';
     } catch (err) {
       console.error('Erreur inattendue:', err);
       showNotification('Une erreur est survenue lors de la sauvegarde', 'error');
@@ -1541,7 +1538,7 @@
   {#if showingCompletionScreen}
     <div class="fixed inset-0 bg-white z-30 flex flex-col">
       <!-- Contenu principal -->
-      <div class="flex-1 flex flex-col p-4 pb-24 overflow-y-auto">
+      <div class="flex-1 flex flex-col p-4 overflow-y-auto">
         <!-- Titre et félicitations -->
         <div class="mb-4">
           <h1 class="text-[32px] font-bold text-blue-800">Félicitation !</h1>
@@ -1603,17 +1600,17 @@
             </label>
           </div>
         </div>
-      </div>
-      
-      <!-- Bouton d'enregistrement -->
-      <div class="p-4 fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg">
-        <button 
-          class="w-full bg-indigo-700 text-white py-4 rounded-lg font-medium flex items-center justify-center text-lg shadow-md hover:bg-indigo-800 transition-colors"
-          on:click={saveCompletedTrack}
-        >
-          <span class="material-icons mr-2">save</span>
-          Enregistrer la balade
-        </button>
+        
+        <!-- Bouton d'enregistrement -->
+        <div class="mb-4">
+          <button 
+            class="w-full bg-indigo-700 text-white py-4 rounded-lg font-medium flex items-center justify-center text-lg shadow-md hover:bg-indigo-800 transition-colors"
+            on:click={saveCompletedTrack}
+          >
+            <span class="material-icons mr-2">save</span>
+            Enregistrer la balade
+          </button>
+        </div>
       </div>
     </div>
   {/if}

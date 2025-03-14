@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { currentUser, refreshUserData } from '$lib/services/auth';
   import { saveUserPreferences } from '$lib/services/preferences';
@@ -10,6 +10,40 @@
   import type { UserRole, ActivityPreference, AgeGroup } from '$lib/types';
   import { supabase } from '$lib/supabase';
   import { fade } from 'svelte/transition';
+  import { browser } from '$app/environment';
+  
+  // Fonction pour empêcher le défilement
+  function preventScroll(e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  }
+  
+  onMount(() => {
+    // Vérifier si le code s'exécute dans un navigateur
+    if (browser) {
+      // Empêcher le défilement sur les événements tactiles et de molette
+      document.addEventListener('touchmove', preventScroll, { passive: false });
+      document.addEventListener('wheel', preventScroll, { passive: false });
+      
+      // Empêcher le défilement avec les touches fléchées
+      document.addEventListener('keydown', (e) => {
+        if(['ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) {
+          e.preventDefault();
+          return false;
+        }
+      });
+    }
+  });
+  
+  onDestroy(() => {
+    // Vérifier si le code s'exécute dans un navigateur
+    if (browser) {
+      // Nettoyer les gestionnaires d'événements
+      document.removeEventListener('touchmove', preventScroll);
+      document.removeEventListener('wheel', preventScroll);
+    }
+  });
   
   // Étape actuelle du processus d'onboarding
   let currentStep = 0; // Commencer à 0 pour l'introduction
@@ -38,11 +72,6 @@
     { value: 'adolescent', label: '12-17 ans' },
     { value: 'adulte', label: '18+ ans' }
   ];
-  
-  onMount(() => {
-    // Ne pas rediriger vers la page de connexion si l'utilisateur n'est pas connecté
-    // Les utilisateurs non connectés doivent pouvoir accéder à l'onboarding
-  });
   
   function nextStep() {
     if (currentStep < totalSteps - 1) {
@@ -123,9 +152,9 @@
 
 {#if currentStep === 0}
   <!-- Première page d'onboarding avec fond bleu, logo, texte et nuages -->
-  <div class="min-h-screen bg-[#3643BA] flex flex-col">
+  <div class="h-screen max-h-screen overflow-hidden bg-[#3643BA] flex flex-col relative">
     <!-- Logo et texte en haut -->
-    <div class="px-6 pt-24">
+    <div class="flex-1 px-6 pt-24 overflow-hidden">
       <div class="px-[24px]">
         <img src="/logo/Logo Moov'-full.png" alt="Moov" class="w-[159px] h-[35.12px] ml-2" />
         <div class="mt-2 w-[265px] h-[72px] bg-[#3643BA] rounded p-3">
@@ -157,12 +186,12 @@
   </div>
 {:else if currentStep === 1}
   <!-- Deuxième page d'onboarding avec fond personnalisé et texte au milieu -->
-  <div class="min-h-screen flex flex-col relative">
+  <div class="h-screen max-h-screen overflow-hidden bg-white flex flex-col relative">
     <!-- Image de fond -->
     <img src="/images/fond.png" alt="Fond" class="absolute inset-0 w-full h-full object-cover" />
     
-    <!-- Texte directement sur le fond bleu -->
-    <div class="flex-1 flex flex-col justify-center z-10 px-6">
+    <!-- Contenu -->
+    <div class="flex-1 relative z-10 flex flex-col items-center justify-center px-6 overflow-hidden">
       <div class="mt-auto mb-auto">
         <p class="text-[#FCFCFB] text-[24px] leading-[120%] font-bold text-left pl-4" style="font-family: 'Inter', sans-serif; letter-spacing: 0%; max-width: 300px;">
           Partez à la découverte de lieux et d'événements autour de vous !
@@ -186,9 +215,9 @@
   </div>
 {:else if currentStep === 2}
   <!-- Troisième page d'onboarding avec nuage rose, mascottes et texte en haut -->
-  <div class="min-h-screen bg-[#3643BA] flex flex-col relative">
+  <div class="h-screen max-h-screen overflow-hidden bg-[#3643BA] flex flex-col relative">
     <!-- Texte en haut -->
-    <div class="pt-36 px-6 z-10">
+    <div class="flex-1 pt-36 px-6 z-10 overflow-hidden">
       <p class="text-[#FCFCFB] text-[24px] leading-[120%] font-bold" style="font-family: 'Inter', sans-serif; letter-spacing: 0%; max-width: 300px;">
         Capturez vos moment et gardez les en souvenir !
       </p>
@@ -217,8 +246,8 @@
   </div>
 {:else if currentStep === 3}
   <!-- Étape 1: Rôle -->
-  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md mx-auto">
+  <div class="h-screen max-h-screen overflow-hidden bg-white flex flex-col">
+    <div class="max-w-md mx-auto overflow-hidden flex-1 px-4 py-12">
       <div class="text-center mb-8">
         <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
         <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
@@ -310,8 +339,8 @@
   </div>
 {:else if currentStep === 4}
   <!-- Étape 2: Préférences d'activités -->
-  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md mx-auto">
+  <div class="h-screen max-h-screen overflow-hidden bg-white flex flex-col">
+    <div class="max-w-md mx-auto overflow-hidden flex-1 px-4 py-12">
       <div class="text-center mb-8">
         <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
         <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
@@ -387,8 +416,8 @@
   </div>
 {:else if currentStep === 5}
   <!-- Étape 3: Tranches d'âge -->
-  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md mx-auto">
+  <div class="h-screen max-h-screen overflow-hidden bg-white flex flex-col">
+    <div class="max-w-md mx-auto overflow-hidden flex-1 px-4 py-12">
       <div class="text-center mb-8">
         <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
         <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
@@ -466,8 +495,8 @@
   </div>
 {:else if currentStep === 6}
   <!-- Étape 4: Distance et accessibilité -->
-  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md mx-auto">
+  <div class="h-screen max-h-screen overflow-hidden bg-white flex flex-col">
+    <div class="max-w-md mx-auto overflow-hidden flex-1 px-4 py-12">
       <div class="text-center mb-8">
         <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
         <h2 class="mt-6 text-3xl font-extrabold text-gray-900">

@@ -498,11 +498,32 @@
     // Suivre la position
     watchId = navigator.geolocation.watchPosition(
       handlePositionUpdate,
-      (error) => console.error('Error getting location:', error),
+      (error) => {
+        console.error('Error getting location:', error);
+        // Afficher un message d'erreur spécifique selon le code d'erreur
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            console.error('L\'utilisateur a refusé la demande de géolocalisation');
+            showNotification('Accès à la géolocalisation refusé', 'error');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            console.error('Les informations de localisation sont indisponibles');
+            showNotification('Position indisponible', 'error');
+            break;
+          case error.TIMEOUT:
+            console.error('La demande de géolocalisation a expiré');
+            showNotification('Délai d\'attente de géolocalisation dépassé', 'error');
+            break;
+          default:
+            console.error('Une erreur inconnue s\'est produite');
+            showNotification('Erreur de géolocalisation', 'error');
+            break;
+        }
+      },
       {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0
+        enableHighAccuracy: false, // Désactiver la haute précision pour une réponse plus rapide
+        timeout: 30000, // Augmenter le délai d'attente à 30 secondes
+        maximumAge: 60000 // Accepter les positions mises en cache jusqu'à 1 minute
       }
     );
   }

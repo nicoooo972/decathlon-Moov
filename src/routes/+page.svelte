@@ -153,9 +153,9 @@
             resolve(userLocation);
           },
           { 
-            timeout: 10000, 
-            enableHighAccuracy: true,
-            maximumAge: 0 
+            timeout: 30000, // Augmenter le délai d'attente à 30 secondes
+            enableHighAccuracy: false, // Désactiver la haute précision pour une réponse plus rapide
+            maximumAge: 60000 // Accepter les positions mises en cache jusqu'à 1 minute
           }
         );
       });
@@ -268,18 +268,41 @@
     authChecked = true;
     loading = false;
 
+    // Précharger les images essentielles
     if (browser) {
-      const imagesToPreload = [
-        '/logo.svg', 
-        '/logo-white.svg', 
-        '/placeholder.jpg', 
+      // Images critiques à précharger immédiatement
+      const criticalImages = [
         '/logo/Logo Moov\'.png',
         '/logo/Logo Moov\'-full.png'
       ];
-      imagesToPreload.forEach(src => {
+      
+      // Images moins critiques à précharger avec une priorité plus faible
+      const nonCriticalImages = [
+        '/logo.svg', 
+        '/logo-white.svg', 
+        '/placeholder.jpg',
+        '/icons/Mascotte Famille.png'
+      ];
+      
+      // Précharger les images critiques immédiatement
+      criticalImages.forEach(src => {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = src;
+        document.head.appendChild(link);
+        
         const img = new Image();
         img.src = src;
       });
+      
+      // Précharger les images non critiques après un court délai
+      setTimeout(() => {
+        nonCriticalImages.forEach(src => {
+          const img = new Image();
+          img.src = src;
+        });
+      }, 1000);
     }
   });
 </script>
@@ -294,7 +317,13 @@
     <!-- Premier écran de splash (M) - sans animation -->
     <div class="min-h-screen flex flex-col items-center justify-center bg-[#3643BA]">
       <div class="flex flex-col items-center">
-        <img src="/logo/Logo Moov'.png" alt="M" class="w-[259px] h-[56.88px] mb-4" />
+        <img 
+          src="/logo/Logo Moov'.png" 
+          alt="M" 
+          class="w-[259px] h-[56.88px] mb-4" 
+          width="259" 
+          height="57"
+        />
         <p class="text-white text-xl font-medium">Pas à pas.</p>
       </div>
     </div>
@@ -303,7 +332,13 @@
     <div class="min-h-screen flex flex-col items-center justify-center bg-[#3643BA]">
       <div class="flex flex-col items-center">
         <div in:scale={{ duration: 800, start: 0, opacity: 0 }}>
-          <img src="/logo/Logo Moov'-full.png" alt="MOOV" class="w-[259px] mb-4" />
+          <img 
+            src="/logo/Logo Moov'-full.png" 
+            alt="MOOV" 
+            class="w-[259px] mb-4" 
+            width="259" 
+            height="57"
+          />
         </div>
         <p class="text-white text-xl font-medium">Pas à pas.</p>
       </div>
@@ -399,7 +434,19 @@
             {#each recommendations.slice(0, 4) as route}
               <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
                 <div class="relative h-[120px]">
-                  <img src={route.image_url || "/placeholder.jpg"} alt={route.name} class="w-full h-full object-cover" />
+                  <img 
+                    src={route.image_url || "/placeholder.jpg"} 
+                    alt={route.name} 
+                    class="w-full h-full object-cover" 
+                    loading="lazy"
+                    decoding="async"
+                    on:error={() => {
+                      // Utiliser une approche plus simple sans manipulation directe du DOM
+                      if (route.image_url) {
+                        route.image_url = "/placeholder.jpg";
+                      }
+                    }}
+                  />
                 </div>
                 <div class="p-2 h-[61.51px] flex flex-col justify-between">
                   <h3 class="font-medium text-sm truncate">{route.name}</h3>
@@ -444,7 +491,19 @@
             {#each nearbyPOIs as poi}
               <div class="bg-white rounded-[5px] overflow-hidden shadow-sm flex-shrink-0 w-[200px]">
                 <div class="relative h-[120px]">
-                  <img src={poi.image_url || "/placeholder.jpg"} alt={poi.name} class="w-full h-full object-cover" />
+                  <img 
+                    src={poi.image_url || "/placeholder.jpg"} 
+                    alt={poi.name} 
+                    class="w-full h-full object-cover" 
+                    loading="lazy"
+                    decoding="async"
+                    on:error={() => {
+                      // Utiliser une approche plus simple sans manipulation directe du DOM
+                      if (poi.image_url) {
+                        poi.image_url = "/placeholder.jpg";
+                      }
+                    }}
+                  />
                 </div>
                 <div class="p-2 h-[61.51px] flex flex-col justify-between">
                   <h3 class="font-medium text-sm truncate">{poi.name}</h3>

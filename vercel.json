@@ -4,5 +4,11 @@
   "installCommand": "npm install --legacy-peer-deps",
   "framework": "sveltekit",
   "devCommand": "npm run dev",
-  "outputDirectory": ".svelte-kit/output"
+  "outputDirectory": ".svelte-kit/output",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/node@20"
+    }
+  ]
 } 

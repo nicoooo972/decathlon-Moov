@@ -10,6 +10,7 @@
   import type { Route, RoutePoint } from '$lib/types';
   import { supabase } from '$lib/supabaseClient';
   import { favoritePOIs, toggleFavorite, checkIfFavorite, loadUserFavorites } from '$lib/stores/favorites-store';
+  import { saveCompletedWalk, uploadWalkPhoto } from '$lib/services/walks';
   
   // Interface étendue pour les POIs avec des propriétés supplémentaires
   interface ExtendedRoutePoint extends RoutePoint {
@@ -40,9 +41,10 @@
   let touchEndY: number = 0;
   let poiPanelElement: HTMLDivElement;
   
-  // Variables pour le suivi du trajet
+  // Variables pour le suivi
   let isNavigating: boolean = false; // Indique si la navigation est active
   let isTracking: boolean = false; // Indique si l'enregistrement du trajet est actif
+  let isPaused: boolean = false; // Indique si le suivi est en pause
   let navigationPath: google.maps.Polyline | null = null; // Chemin de navigation
   let directionsRenderer: google.maps.DirectionsRenderer | null = null; // Renderer pour les directions
   let trackingPath: google.maps.Polyline[] = []; // Chemins enregistrés pendant le suivi
@@ -55,6 +57,21 @@
   let destinationMarker: google.maps.Marker | null = null; // Marqueur de destination
   let navigationDestination: ExtendedRoutePoint | null = null; // Destination de navigation
   let navigationDistance: string = ""; // Distance jusqu'à la destination
+  
+  // Variables pour l'écran de validation
+  let showingCompletionScreen = false;
+  let completionData = {
+    distance: 0,
+    duration: 0,
+    steps: 0,
+    routeName: ''
+  };
+  let walkDescription = '';
+  let walkPhotos: File[] = [];
+  let walkPhotoUrls: string[] = [
+    "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=2073&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1541617219835-3689726fa8e7?q=80&w=1974&auto=format&fit=crop"
+  ];
   
   // Récupérer l'ID de l'itinéraire depuis les paramètres d'URL
   $: {
@@ -825,6 +842,7 @@
     if (!isNavigating || isTracking || !userMarker || !map) return;
     
     isTracking = true;
+    isPaused = false;
     startTime = Date.now();
     trackingCoordinates = [userMarker.getPosition() as google.maps.LatLng];
     stepCount = 0;
@@ -842,9 +860,9 @@
     
     trackingPath.push(newPath);
     
-    // Mettre à jour le temps écoulé toutes les secondes
-    trackingInterval = window.setInterval(() => {
-      if (startTime) {
+    // Démarrer l'intervalle pour mettre à jour le temps écoulé
+    trackingInterval = setInterval(() => {
+      if (startTime && !isPaused) {
         elapsedTime = Math.floor((Date.now() - startTime) / 1000);
       }
     }, 1000);
@@ -859,6 +877,7 @@
     // Sauvegarder les statistiques finales avant de réinitialiser
     const finalDistance = distance;
     const finalTime = elapsedTime;
+    const finalSteps = stepCount;
     
     // Arrêter le suivi
     isTracking = false;
@@ -874,6 +893,14 @@
     trackingPath = [];
     trackingCoordinates = [];
     
+    // Afficher l'écran de validation de balade
+    showCompletionScreen({
+      distance: finalDistance,
+      duration: finalTime,
+      steps: finalSteps,
+      routeName: navigationDestination?.name || 'Balade'
+    });
+    
     // Réinitialiser les compteurs
     startTime = null;
     elapsedTime = 0;
@@ -885,12 +912,99 @@
       coordinates: trackingCoordinates,
       distance: finalDistance,
       duration: Math.floor(finalTime / 60),
-      steps: stepCount,
+      steps: finalSteps,
       startTime: startTime || 0,
       endTime: Date.now()
     });
-    
-    showNotification(`Trajet terminé: ${finalDistance.toFixed(2)} km en ${formatTime(finalTime)}`, 'success');
+  }
+  
+  // Afficher l'écran de validation de balade
+  function showCompletionScreen(data: {
+    distance: number,
+    duration: number,
+    steps: number,
+    routeName: string
+  }) {
+    completionData = data;
+    walkDescription = '';
+    walkPhotos = [];
+    showingCompletionScreen = true;
+  }
+  
+  // Gérer l'ajout d'une photo
+  function handleAddPhoto(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      const file = input.files[0];
+      walkPhotos.push(file);
+      walkPhotos = walkPhotos; // Pour déclencher la réactivité
+      
+      // Créer une URL pour prévisualiser l'image
+      const imageUrl = URL.createObjectURL(file);
+      walkPhotoUrls.push(imageUrl);
+      walkPhotoUrls = walkPhotoUrls; // Pour déclencher la réactivité
+    }
+  }
+  
+  // Fermer l'écran de validation et retourner à la carte
+  function closeCompletionScreen() {
+    showingCompletionScreen = false;
+    clearNavigation();
+  }
+  
+  // Enregistrer la balade
+  async function saveCompletedTrack() {
+    try {
+      // Préparer les données de la balade
+      const walkData = {
+        route_id: null, // Pas de route associée pour le moment
+        name: `Balade du ${new Date().toLocaleDateString()}`,
+        description: walkDescription,
+        distance_km: completionData.distance,
+        duration_seconds: completionData.duration,
+        steps: completionData.steps,
+        start_time: new Date(Date.now() - completionData.duration * 1000),
+        end_time: new Date(),
+        image_url: walkPhotoUrls.length > 0 ? walkPhotoUrls[0] : '/images/default-walk.jpg'
+      };
+
+      // Sauvegarder la balade
+      const { data: savedWalk, error } = await saveCompletedWalk(walkData);
+      
+      if (error) {
+        console.error('Erreur lors de la sauvegarde de la balade:', error);
+        showNotification('Erreur lors de la sauvegarde de la balade', 'error');
+        return;
+      }
+      
+      console.log('Balade sauvegardée avec succès:', savedWalk);
+      
+      // Télécharger les photos si disponibles
+      if (walkPhotos.length > 0) {
+        console.log(`Téléchargement de ${walkPhotos.length} photos...`);
+        
+        for (let i = 0; i < walkPhotos.length; i++) {
+          const photo = walkPhotos[i];
+          const { data: photoData, error: photoError } = await uploadWalkPhoto(savedWalk.id, photo);
+          
+          if (photoError) {
+            console.error(`Erreur lors du téléchargement de la photo ${i+1}:`, photoError);
+            showNotification(`Erreur lors du téléchargement de la photo ${i+1}`, 'error');
+          } else {
+            console.log(`Photo ${i+1} téléchargée avec succès:`, photoData);
+          }
+        }
+      }
+      
+      showNotification('Balade sauvegardée avec succès!', 'success');
+      closeCompletionScreen();
+      
+      // Rediriger vers la page des balades ou une autre page
+      // goto('/walks'); // Décommenter si vous avez une page de balades
+    } catch (err) {
+      console.error('Erreur inattendue:', err);
+      showNotification('Une erreur est survenue lors de la sauvegarde', 'error');
+    }
   }
   
   // Enregistrer les données du trajet
@@ -900,9 +1014,21 @@
     // TODO: Sauvegarder les données dans la base de données
   }
   
+  // Formater la durée en heures et minutes
+  function formatDurationHM(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h${minutes}min`;
+    } else {
+      return `${minutes}min`;
+    }
+  }
+  
   // Mettre à jour la position pendant le suivi
   function updateTrackingPosition(position: google.maps.LatLng) {
-    if (!isTracking || trackingPath.length === 0) return;
+    if (!isTracking || trackingPath.length === 0 || isPaused) return;
     
     // Ajouter la nouvelle position aux coordonnées
     trackingCoordinates.push(position);
@@ -965,6 +1091,38 @@
       console.error('Erreur lors de la gestion des favoris:', error);
       showNotification('Erreur lors de la gestion des favoris', 'error');
     }
+  }
+
+  // Mettre en pause le suivi
+  function pauseTracking() {
+    if (!isTracking || isPaused) return;
+    
+    isPaused = true;
+    
+    // Sauvegarder le temps écoulé actuel
+    if (trackingInterval) {
+      clearInterval(trackingInterval);
+      trackingInterval = null;
+    }
+    
+    showNotification('Suivi mis en pause', 'info');
+  }
+  
+  // Reprendre le suivi
+  function resumeTracking() {
+    if (!isTracking || !isPaused) return;
+    
+    isPaused = false;
+    
+    // Redémarrer l'intervalle de mise à jour du temps
+    trackingInterval = setInterval(() => {
+      if (startTime) {
+        const pausedTime = isPaused ? 0 : Date.now() - startTime;
+        elapsedTime = Math.floor(pausedTime / 1000);
+      }
+    }, 1000);
+    
+    showNotification('Suivi repris', 'success');
   }
 </script>
 
@@ -1045,24 +1203,25 @@
     
     <!-- Panneau de détails du POI sélectionné (style Google Maps) -->
     {#if selectedPOI}
-      <div 
+      <section 
+        aria-label="Détails du point d'intérêt"
         bind:this={poiPanelElement}
         class="absolute bottom-0 left-0 right-0 bg-white shadow-lg z-20 rounded-t-2xl flex flex-col transform transition-all duration-300 ease-out {isPOIExpanded ? 'h-[80vh]' : 'h-auto'} animate-slide-up"
-        on:touchstart={handleTouchStart}
-        on:touchmove={handleTouchMove}
-        on:touchend={handleTouchEnd}
-        on:click|stopPropagation={() => {}}
+        on:touchstart|stopPropagation={handleTouchStart}
+        on:touchmove|stopPropagation={handleTouchMove}
+        on:touchend|stopPropagation={handleTouchEnd}
       >
         <!-- Barre de titre avec poignée -->
-        <div 
-          class="flex justify-center items-center p-2 relative border-b border-gray-200 cursor-pointer touch-manipulation"
+        <button 
+          type="button"
+          class="w-full flex justify-center items-center p-2 relative border-b border-gray-200 cursor-pointer touch-manipulation"
           on:click={togglePOIExpansion}
           on:touchstart|stopPropagation={handleTouchStart}
           on:touchmove|stopPropagation={handleTouchMove}
           on:touchend|stopPropagation={handleTouchEnd}
         >
           <div class="w-12 h-1 bg-gray-300 rounded-full"></div>
-        </div>
+        </button>
         
         <!-- Version compacte (titre et boutons uniquement) -->
         {#if !isPOIExpanded}
@@ -1268,13 +1427,14 @@
             </button>
           {/if}
         </div>
-      </div>
+      </section>
     {/if}
     
     <!-- Panneau de navigation et de suivi -->
     {#if isNavigating && navigationDestination}
-      <div class="absolute bottom-0 left-0 right-0 bg-white shadow-lg overflow-hidden z-20 border-t-4 border-[#0082C3]">
-        <div class="p-4 bg-[#0082C3] text-white flex justify-between items-center">
+      <div class="fixed inset-x-0 top-0 bottom-0 flex flex-col z-20">
+        <!-- En-tête avec titre et bouton de fermeture -->
+        <div class="bg-[#0082C3] text-white p-4 flex justify-between items-center">
           <h2 class="text-lg font-bold">Navigation vers {navigationDestination.name}</h2>
           <button 
             class="text-white hover:text-gray-200 transition-colors"
@@ -1285,80 +1445,181 @@
           </button>
         </div>
         
-        <div class="p-4">
-          <!-- Informations sur la destination -->
-          <div class="mb-4">
-            <div class="flex items-center mb-2">
-              <span class="material-icons text-blue-600 mr-2">place</span>
-              <span class="text-gray-700">{navigationDestination.name}</span>
-            </div>
-            <div class="flex items-center mb-2">
-              <span class="material-icons text-blue-600 mr-2">directions_walk</span>
-              <span class="text-gray-700">Distance: {navigationDistance}</span>
-            </div>
-          </div>
-          
-          {#if !isTracking}
-            <!-- Bouton pour démarrer le suivi -->
-            <button 
-              class="w-full bg-[#0082C3] text-white text-center py-3 font-semibold hover:bg-blue-600 transition-colors mb-2"
-              on:click={startTracking}
-            >
-              Démarrer le suivi
-            </button>
-            
-            <!-- Bouton pour retourner à la carte -->
-            <button 
-              class="w-full border border-[#0082C3] text-[#0082C3] text-center py-3 font-semibold hover:bg-blue-50 transition-colors"
-              on:click={() => {
-                if (map && userMarker && userMarker.getPosition()) {
-                  map.setCenter(userMarker.getPosition());
-                  map.setZoom(16);
-                }
-              }}
-            >
-              Retour à ma position
-            </button>
-          {:else}
-            <!-- Affichage des statistiques pendant le suivi -->
-            <div class="grid grid-cols-3 gap-4 mb-4">
-              <div class="text-center">
+        <!-- Contenu principal (carte) -->
+        <div class="flex-grow relative">
+          <!-- La carte sera visible ici -->
+        </div>
+        
+        <!-- Statistiques et boutons en bas -->
+        {#if isTracking}
+          <div class="bg-white border-t border-gray-200">
+            <!-- Statistiques -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+              <div class="text-center flex-1">
                 <div class="text-sm text-gray-500">Distance</div>
                 <div class="font-semibold">{distance.toFixed(2)} km</div>
               </div>
-              <div class="text-center">
+              <div class="text-center flex-1">
                 <div class="text-sm text-gray-500">Temps</div>
                 <div class="font-semibold">{formatTime(elapsedTime)}</div>
               </div>
-              <div class="text-center">
+              <div class="text-center flex-1">
                 <div class="text-sm text-gray-500">Pas</div>
                 <div class="font-semibold">{stepCount}</div>
               </div>
             </div>
             
-            <div class="grid grid-cols-2 gap-2">
+            <!-- Boutons -->
+            <div class="flex p-4">
               <button 
-                class="w-full bg-red-600 text-white text-center py-3 font-semibold hover:bg-red-700 transition-colors"
-                on:click={stopTracking}
+                class="flex-1 border border-[#0082C3] text-[#0082C3] text-center py-3 font-semibold hover:bg-blue-50 transition-colors rounded-lg mr-2"
+                on:click={isPaused ? resumeTracking : pauseTracking}
               >
-                Arrêter
+                {isPaused ? 'Reprendre' : 'Faire une pause'}
               </button>
               
               <button 
-                class="w-full bg-gray-600 text-white text-center py-3 font-semibold hover:bg-gray-700 transition-colors"
-                on:click={clearNavigation}
+                class="flex-1 bg-[#0082C3] text-white text-center py-3 font-semibold hover:bg-blue-600 transition-colors rounded-lg"
+                on:click={stopTracking}
               >
-                Annuler
+                Terminer
               </button>
             </div>
-          {/if}
+          </div>
+        {:else}
+          <div class="bg-white border-t border-gray-200 p-4">
+            <!-- Informations sur la destination -->
+            <div class="mb-4">
+              <div class="flex items-center mb-2">
+                <span class="material-icons text-blue-600 mr-2">place</span>
+                <span class="text-gray-700">{navigationDestination.name}</span>
+              </div>
+              <div class="flex items-center mb-2">
+                <span class="material-icons text-blue-600 mr-2">directions_walk</span>
+                <span class="text-gray-700">Distance: {navigationDistance}</span>
+              </div>
+            </div>
+            
+            <!-- Bouton pour démarrer le suivi -->
+            <button 
+              class="w-full bg-[#0082C3] text-white text-center py-3 font-semibold hover:bg-blue-600 transition-colors mb-2 rounded-lg"
+              on:click={startTracking}
+            >
+              Démarrer le suivi
+            </button>
+          </div>
+        {/if}
+        
+        <!-- Barre de navigation en bas -->
+        <div class="bg-white border-t border-gray-200 flex justify-around">
+          <a href="/" class="flex flex-col items-center justify-center py-3 text-gray-500">
+            <span class="material-icons text-xl">home</span>
+            <span class="text-xs">Accueil</span>
+          </a>
+          <a href="/parcours" class="flex flex-col items-center justify-center py-3 text-gray-500">
+            <span class="material-icons text-xl">format_list_bulleted</span>
+            <span class="text-xs">Parcours</span>
+          </a>
+          <a href="/carte" class="flex flex-col items-center justify-center py-3 text-indigo-600">
+            <span class="material-icons text-xl">map</span>
+            <span class="text-xs">Carte</span>
+          </a>
+          <a href="/favoris" class="flex flex-col items-center justify-center py-3 text-gray-500">
+            <span class="material-icons text-xl">favorite_border</span>
+            <span class="text-xs">Favoris</span>
+          </a>
+          <a href="/profil" class="flex flex-col items-center justify-center py-3 text-gray-500">
+            <span class="material-icons text-xl">person</span>
+            <span class="text-xs">Profil</span>
+          </a>
         </div>
       </div>
     {/if}
   </div>
 
+  <!-- Écran de validation de balade -->
+  {#if showingCompletionScreen}
+    <div class="fixed inset-0 bg-white z-30 flex flex-col">
+      <!-- Contenu principal -->
+      <div class="flex-1 flex flex-col p-4 pb-24 overflow-y-auto">
+        <!-- Titre et félicitations -->
+        <div class="mb-4">
+          <h1 class="text-[32px] font-bold text-blue-800">Félicitation !</h1>
+          <p class="text-gray-600">Vous avez terminé votre balade</p>
+        </div>
+        
+        <!-- Image de la balade -->
+        <div class="relative w-full h-40 mb-4 rounded-lg overflow-hidden">
+          <img 
+            src="https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=2073&auto=format&fit=crop"
+            alt="Tour Eiffel"
+            class="w-full h-full object-cover"
+          />
+        </div>
+        
+        <!-- Statistiques -->
+        <div class="grid grid-cols-2 gap-px bg-gray-200 rounded-lg overflow-hidden mb-4">
+          <div class="bg-gray-100 p-4 text-center">
+            <div class="text-gray-500 text-sm">Nb. de pas</div>
+            <div class="text-xl font-bold">{completionData.steps}</div>
+          </div>
+          <div class="bg-gray-100 p-4 text-center">
+            <div class="text-gray-500 text-sm">Durée</div>
+            <div class="text-xl font-bold">{formatDurationHM(completionData.duration)}</div>
+          </div>
+        </div>
+        
+        <!-- Nom de la balade -->
+        <div class="mb-4">
+          <h2 class="text-lg font-bold">Balade {completionData.routeName}</h2>
+        </div>
+        
+        <!-- Champ de description -->
+        <div class="mb-4">
+          <textarea 
+            bind:value={walkDescription}
+            placeholder="Décrivez votre balade..."
+            class="w-full border border-gray-300 rounded-lg p-3 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          ></textarea>
+        </div>
+        
+        <!-- Photos -->
+        <div class="mb-6">
+          <h3 class="text-lg font-medium mb-2">Vos photos</h3>
+          <div class="flex gap-2">
+            {#each walkPhotoUrls as photoUrl, index}
+              <div class="w-1/3 aspect-square bg-gray-200 rounded-lg overflow-hidden">
+                <img 
+                  src={photoUrl} 
+                  alt="Photo de balade {index + 1}" 
+                  class="w-full h-full object-cover"
+                />
+              </div>
+            {/each}
+            <label class="w-1/3 aspect-square bg-blue-50 rounded-lg flex flex-col items-center justify-center cursor-pointer">
+              <input type="file" accept="image/*" class="hidden" on:change={handleAddPhoto} />
+              <span class="material-icons text-blue-600 mb-1">add_a_photo</span>
+              <span class="text-xs text-blue-600">Ajouter des photos</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Bouton d'enregistrement -->
+      <div class="p-4 fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg">
+        <button 
+          class="w-full bg-indigo-700 text-white py-4 rounded-lg font-medium flex items-center justify-center text-lg shadow-md hover:bg-indigo-800 transition-colors"
+          on:click={saveCompletedTrack}
+        >
+          <span class="material-icons mr-2">save</span>
+          Enregistrer la balade
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <!-- Barre de recherche -->
-  <div class="absolute {selectedPOI ? 'bottom-4' : 'bottom-32'} left-4 right-4 z-20 flex justify-center gap-2">
+  <div class="absolute {selectedPOI ? 'bottom-0' : 'bottom-20'} left-4 right-4 z-10 flex justify-center gap-2 mb-4">
     <div class="w-[263px] h-[56px] bg-white rounded-lg shadow-lg flex items-center px-4">
       <span class="material-icons text-gray-400 mr-2">search</span>
       <input 
@@ -1370,6 +1631,32 @@
     <button class="w-[56px] h-[56px] bg-white rounded-lg shadow-lg flex items-center justify-center">
       <img src="/icons_maps/Vector.svg" alt="Filtres" class="w-5 h-5">
     </button>
+  </div>
+
+  <!-- Barre de navigation en bas -->
+  <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+    <div class="flex justify-around">
+      <a href="/" class="flex flex-col items-center justify-center py-3 text-gray-500">
+        <span class="material-icons text-xl">home</span>
+        <span class="text-xs">Accueil</span>
+      </a>
+      <a href="/parcours" class="flex flex-col items-center justify-center py-3 text-gray-500">
+        <span class="material-icons text-xl">format_list_bulleted</span>
+        <span class="text-xs">Parcours</span>
+      </a>
+      <a href="/carte" class="flex flex-col items-center justify-center py-3 text-indigo-600">
+        <span class="material-icons text-xl">map</span>
+        <span class="text-xs">Carte</span>
+      </a>
+      <a href="/favoris" class="flex flex-col items-center justify-center py-3 text-gray-500">
+        <span class="material-icons text-xl">favorite_border</span>
+        <span class="text-xs">Favoris</span>
+      </a>
+      <a href="/profil" class="flex flex-col items-center justify-center py-3 text-gray-500">
+        <span class="material-icons text-xl">person</span>
+        <span class="text-xs">Profil</span>
+      </a>
+    </div>
   </div>
 </div>
 

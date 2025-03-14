@@ -7,6 +7,7 @@
   import { page } from '$app/stores';
   import { supabase } from '$lib/supabase';
   import type { User } from '$lib/types';
+  import CompletedWalks from '$lib/components/profile/CompletedWalks.svelte';
   
   let user: User | null = null;
   let loading = true;
@@ -261,40 +262,30 @@
         </form>
       </div>
       
-      <!-- Statistiques utilisateur -->
+      <!-- Statistiques -->
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 dark:text-white mb-4">Mes statistiques</h2>
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">Mes statistiques</h2>
         
-        {#if loadingStats}
-          <div class="flex justify-center items-center h-24">
-            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-500"></div>
-          </div>
-        {:else}
-          <div class="grid grid-cols-3 gap-4">
-            <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-center">
-              <span class="block text-2xl font-bold text-green-600 dark:text-green-400">{stats.visited}</span>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Lieux visités</span>
-            </div>
-            <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-center">
-              <span class="block text-2xl font-bold text-green-600 dark:text-green-400">{stats.favorites}</span>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Favoris</span>
-            </div>
-            <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-center">
-              <span class="block text-2xl font-bold text-green-600 dark:text-green-400">{stats.routes}</span>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Parcours</span>
-            </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg text-center">
+            <div class="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{stats.visited}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">Lieux visités</div>
           </div>
           
-          <div class="mt-4 flex justify-center">
-            <a 
-              href="/favorites" 
-              class="text-green-600 dark:text-green-400 hover:underline"
-            >
-              Voir mes favoris
-            </a>
+          <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg text-center">
+            <div class="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{stats.favorites}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">Favoris</div>
           </div>
-        {/if}
+          
+          <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg text-center">
+            <div class="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{stats.routes}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">Parcours</div>
+          </div>
+        </div>
       </div>
+      
+      <!-- Balades terminées -->
+      <CompletedWalks />
       
       <!-- Section des préférences -->
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">

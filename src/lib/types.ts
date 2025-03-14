@@ -40,6 +40,8 @@ export interface Route {
   updated_at: string;
   image_url?: string;
   distance_km?: number; // Distance calculée à la volée
+  waypoints?: { lat: number; lng: number }[]; // Points du chemin
+  points_of_interest?: RoutePoint[]; // Points d'intérêt sur le parcours
 }
 
 export interface RoutePoint {

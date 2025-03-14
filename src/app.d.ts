@@ -1,3 +1,6 @@
+/// <reference types="@sveltejs/kit" />
+/// <reference types="svelte" />
+
 // See https://kit.svelte.dev/docs/types#app
 // for information about these interfaces
 declare global {
@@ -18,3 +21,15 @@ declare global {
 /// <reference types="@types/google.maps" />
 
 export {};
+
+declare module '*.svelte' {
+	import type { ComponentType } from 'svelte';
+	const component: ComponentType;
+	export default component;
+}
+
+declare namespace svelte.JSX {
+	interface HTMLAttributes<T> {
+		onerror?: (event: Event) => void;
+	}
+}

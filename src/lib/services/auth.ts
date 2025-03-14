@@ -18,6 +18,10 @@ supabase.auth.getSession().then(({ data: { session } }) => {
 // Listen for auth changes
 supabase.auth.onAuthStateChange((_event, session) => {
   if (session?.user) {
+    // Supprimer la classe no-scroll du body pour permettre le défilement
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('no-scroll');
+    }
     refreshUserData();
   } else {
     currentUser.set(null);
@@ -40,6 +44,11 @@ export async function refreshUserData() {
   const { data: { user } } = await supabase.auth.getUser();
   
   if (user) {
+    // Supprimer la classe no-scroll du body pour permettre le défilement après connexion
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('no-scroll');
+    }
+    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -153,6 +162,11 @@ export async function signIn(email: string, password: string) {
   if (error) throw error;
   
   if (data.user) {
+    // Supprimer la classe no-scroll du body pour permettre le défilement après connexion
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('no-scroll');
+    }
+    
     await refreshUserData();
     return data.user;
   }
@@ -194,6 +208,11 @@ export async function updateProfile(profile: Partial<User>) {
 
 // Connexion avec Google
 export async function signInWithGoogle() {
+  // Supprimer la classe no-scroll du body pour permettre le défilement
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('no-scroll');
+  }
+  
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -208,6 +227,11 @@ export async function signInWithGoogle() {
 
 // Connexion avec Facebook
 export async function signInWithFacebook() {
+  // Supprimer la classe no-scroll du body pour permettre le défilement
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('no-scroll');
+  }
+  
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'facebook',
     options: {

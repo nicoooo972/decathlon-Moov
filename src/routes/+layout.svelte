@@ -29,6 +29,9 @@
 				// Token valide trouvé, initialiser l'utilisateur
 				await refreshUserData();
 				
+				// S'assurer que la classe no-scroll est supprimée
+				document.body.classList.remove('no-scroll');
+				
 				// Rediriger si nécessaire
 				if (isAuthPage) {
 					goto('/');
@@ -52,6 +55,8 @@
 		const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
 			console.log('Auth state change:', event);
 			if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+				// S'assurer que la classe no-scroll est supprimée
+				document.body.classList.remove('no-scroll');
 				await refreshUserData();
 			} else if (event === 'SIGNED_OUT') {
 				currentUser.set(null);

@@ -12,39 +12,6 @@
   import { fade } from 'svelte/transition';
   import { browser } from '$app/environment';
   
-  // Fonction pour empêcher le défilement
-  function preventScroll(e: Event) {
-    e.preventDefault();
-    e.stopPropagation();
-    return false;
-  }
-  
-  onMount(() => {
-    // Vérifier si le code s'exécute dans un navigateur
-    if (browser) {
-      // Empêcher le défilement sur les événements tactiles et de molette
-      document.addEventListener('touchmove', preventScroll, { passive: false });
-      document.addEventListener('wheel', preventScroll, { passive: false });
-      
-      // Empêcher le défilement avec les touches fléchées
-      document.addEventListener('keydown', (e) => {
-        if(['ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) {
-          e.preventDefault();
-          return false;
-        }
-      });
-    }
-  });
-  
-  onDestroy(() => {
-    // Vérifier si le code s'exécute dans un navigateur
-    if (browser) {
-      // Nettoyer les gestionnaires d'événements
-      document.removeEventListener('touchmove', preventScroll);
-      document.removeEventListener('wheel', preventScroll);
-    }
-  });
-  
   // Étape actuelle du processus d'onboarding
   let currentStep = 0; // Commencer à 0 pour l'introduction
   const totalSteps = 7; // 3 écrans d'introduction + 4 étapes de préférences

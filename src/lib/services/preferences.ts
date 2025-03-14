@@ -40,56 +40,31 @@ export async function getUserPreferences(userId: string) {
 export async function saveUserPreferences(
   userId: string,
   role: UserRole,
-  activityPreferences: ActivityPreference[],
-  ageGroups: AgeGroup[],
-  maxDistanceKm: number,
-  accessibilityNeeds: boolean
+  activities: string[],
+  ageGroups: string[],
+  maxDistance: number,
+  accessibilityNeeds: boolean,
+  durationMinutes: number
 ) {
-  // Vérifier si les préférences existent déjà
-  const existingPrefs = await getUserPreferences(userId);
-  
-  if (existingPrefs) {
-    // Mettre à jour
-    const { data, error } = await supabase
-      .from('preferences')
-      .update({
-        role,
-        activity_preferences: activityPreferences,
-        age_groups: ageGroups,
-        max_distance_km: maxDistanceKm,
-        accessibility_needs: accessibilityNeeds,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', existingPrefs.id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    
-    userPreferences.set(data as UserPreferences);
-    return data;
-  } else {
-    // Créer
-    const { data, error } = await supabase
-      .from('preferences')
-      .insert({
-        user_id: userId,
-        role,
-        activity_preferences: activityPreferences,
-        age_groups: ageGroups,
-        max_distance_km: maxDistanceKm,
-        accessibility_needs: accessibilityNeeds,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-    
-    if (error) throw error;
-    
-    userPreferences.set(data as UserPreferences);
-    return data;
+  const { data, error } = await supabase
+    .from('preferences')
+    .upsert({
+      user_id: userId,
+      role,
+      activities,
+      age_groups: ageGroups,
+      max_distance: maxDistance,
+      accessibility_needs: accessibilityNeeds,
+      duration_minutes: durationMinutes,
+      updated_at: new Date().toISOString()
+    })
+    .select();
+
+  if (error) {
+    throw error;
   }
+
+  return data;
 }
 
 // Vérifier si l'utilisateur a complété ses préférences

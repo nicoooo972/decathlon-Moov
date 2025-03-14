@@ -1,19 +1,18 @@
-export type UserRole = 'parent' | 'enfant';
+export type UserRole = 'solo' | 'family';
 
 export type ActivityPreference = 'nature' | 'histoire' | 'culture' | 'sport' | 'aventure';
 
 export type AgeGroup = 'tout-petit' | 'enfant' | 'adolescent' | 'adulte';
 
 export interface UserPreferences {
-  id?: number;
   user_id: string;
   role: UserRole;
-  activity_preferences: ActivityPreference[];
-  age_groups: AgeGroup[];
-  max_distance_km: number;
+  activities: string[];
+  age_groups: string[];
+  max_distance: number;
   accessibility_needs: boolean;
-  created_at?: string;
-  updated_at?: string;
+  duration_minutes: number;
+  updated_at: string;
 }
 
 export interface User {

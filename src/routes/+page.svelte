@@ -299,7 +299,7 @@
     </div>
   {:else}
     <!-- Page d'accueil -->
-    <div class="min-h-screen flex flex-col">
+    <div class="min-h-screen flex flex-col overflow-auto">
       <!-- Hero section -->
       <div class="relative bg-white text-gray-800">
         <div class="mx-auto px-6 pt-8 pb-6">

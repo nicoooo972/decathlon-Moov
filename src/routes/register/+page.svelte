@@ -69,7 +69,7 @@
           sessionStorage.setItem('redirectCount', '0');
         }
         
-        goto('/onboarding');
+        goto('/login');
       });
     } catch (error) {
       if (error instanceof Error) {

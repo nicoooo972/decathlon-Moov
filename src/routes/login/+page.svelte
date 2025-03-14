@@ -70,7 +70,7 @@
         if (user && await hasUserPreferences(user.id)) {
           goto('/');
         } else {
-          goto('/onboarding');
+          goto('/preferences');
         }
       });
     } catch (error) {

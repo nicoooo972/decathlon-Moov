@@ -17,7 +17,7 @@
       if (user && await hasUserPreferences(user.id)) {
         goto('/');
       } else {
-        goto('/onboarding');
+        goto('/preferences');
       }
     } catch (error) {
       console.error('Erreur lors de la redirection après OAuth:', error);

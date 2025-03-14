@@ -1,9 +1,19 @@
-import { supabase } from '$lib/supabase';
-import type { User } from '$lib/types';
+import { supabase } from '$lib/supabaseClient';
+import type { User } from '@supabase/supabase-js';
 import { goto } from '$app/navigation';
 import { writable } from 'svelte/store';
 
 export const currentUser = writable<User | null>(null);
+
+// Initialize the store with the current session
+supabase.auth.getSession().then(({ data: { session } }) => {
+  currentUser.set(session?.user ?? null);
+});
+
+// Listen for auth changes
+supabase.auth.onAuthStateChange((_event, session) => {
+  currentUser.set(session?.user ?? null);
+});
 
 // Initialiser l'utilisateur au chargement
 export async function initializeAuth() {
@@ -85,25 +95,18 @@ export async function refreshUserData() {
 
 // Vérifier si l'utilisateur a déjà des préférences
 export async function hasUserPreferences(userId: string): Promise<boolean> {
-  if (!userId) return false;
-  
-  try {
-    const { data, error } = await supabase
-      .from('preferences')
-      .select('id')
-      .eq('user_id', userId)
-      .single();
-    
-    if (error && error.code !== 'PGRST116') { // PGRST116 = not found
-      console.error('Erreur lors de la vérification des préférences:', error);
-      return false;
-    }
-    
-    return !!data;
-  } catch (error) {
-    console.error('Erreur lors de la vérification des préférences:', error);
+  const { data, error } = await supabase
+    .from('preferences')
+    .select('user_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error checking user preferences:', error);
     return false;
   }
+
+  return !!data;
 }
 
 // Inscription avec email et mot de passe

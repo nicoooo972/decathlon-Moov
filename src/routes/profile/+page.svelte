@@ -112,7 +112,7 @@
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-  <div class="container mx-auto px-4 py-8">
+  <div class="container mx-auto px-4 py-8 overflow-auto">
     <div class="flex items-center mb-6">
       <button 
         on:click={goBack}

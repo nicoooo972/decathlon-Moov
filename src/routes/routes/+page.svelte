@@ -81,17 +81,17 @@
 </script>
 
 <svelte:head>
-  <title>Parcours disponibles | Decathlon Urban Trek</title>
+  <title>Activités disponibles | Decathlon Urban Trek</title>
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
   <div class="max-w-4xl mx-auto">
     <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold text-gray-900">Parcours disponibles</h1>
+      <h1 class="text-2xl font-bold text-gray-900">Activités disponibles</h1>
       
       <div class="flex space-x-2">
         <Button variant="outline" on:click={toggleRouteDisplay}>
-          {showRecommended ? 'Voir tous les parcours' : 'Voir recommandés'}
+          {showRecommended ? 'Voir toutes les activités' : 'Voir recommandées'}
         </Button>
         <Button on:click={() => goto('/map')}>
           <span class="material-icons mr-1">map</span>

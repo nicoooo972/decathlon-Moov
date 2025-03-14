@@ -11,11 +11,15 @@ export async function getUserSteps(): Promise<UserSteps | null> {
         .single();
 
     if (error) {
+        if (error.code === 'PGRST116') {
+            console.log('Aucune donnée de pas trouvée pour l\'utilisateur');
+            return { total_steps: 0, last_updated: new Date().toISOString() };
+        }
         console.error('Error fetching user steps:', error);
         return null;
     }
 
-    return data;
+    return data as UserSteps;
 }
 
 export async function initializeUserSteps(): Promise<UserSteps | null> {

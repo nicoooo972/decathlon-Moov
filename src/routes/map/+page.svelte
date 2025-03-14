@@ -1017,8 +1017,8 @@
       showNotification('Balade sauvegardée avec succès!', 'success');
       closeCompletionScreen();
       
-      // Rediriger vers la page profil
-      window.location.href = '/profile';
+      // Rediriger vers la carte au lieu du profil
+      window.location.href = '/map';
     } catch (err) {
       console.error('Erreur inattendue:', err);
       showNotification('Une erreur est survenue lors de la sauvegarde', 'error');
@@ -1536,7 +1536,7 @@
           </a>
           <a href="/parcours" class="flex flex-col items-center justify-center py-3 text-gray-500">
             <span class="material-icons text-xl">format_list_bulleted</span>
-            <span class="text-xs">Parcours</span>
+            <span class="text-xs">Activités</span>
           </a>
           <a href="/carte" class="flex flex-col items-center justify-center py-3 text-indigo-600">
             <span class="material-icons text-xl">map</span>
@@ -1544,7 +1544,7 @@
           </a>
           <a href="/favoris" class="flex flex-col items-center justify-center py-3 text-gray-500">
             <span class="material-icons text-xl">favorite_border</span>
-            <span class="text-xs">Favoris</span>
+            <span class="text-xs">Galerie</span>
           </a>
           <a href="/profil" class="flex flex-col items-center justify-center py-3 text-gray-500">
             <span class="material-icons text-xl">person</span>
@@ -1562,7 +1562,7 @@
       <div class="flex-1 flex flex-col p-4 overflow-y-auto">
         <!-- Titre et félicitations -->
         <div class="mb-4">
-          <h1 class="text-[32px] font-bold text-blue-800">Félicitation !</h1>
+          <h1 class="text-[32px] font-bold text-blue-800">Félicitations !</h1>
           <p class="text-gray-600">Vous avez terminé votre balade</p>
         </div>
         
@@ -1660,7 +1660,7 @@
       </a>
       <a href="/parcours" class="flex flex-col items-center justify-center py-3 text-gray-500">
         <span class="material-icons text-xl">format_list_bulleted</span>
-        <span class="text-xs">Parcours</span>
+        <span class="text-xs">Activités</span>
       </a>
       <a href="/carte" class="flex flex-col items-center justify-center py-3 text-indigo-600">
         <span class="material-icons text-xl">map</span>
@@ -1668,7 +1668,7 @@
       </a>
       <a href="/favoris" class="flex flex-col items-center justify-center py-3 text-gray-500">
         <span class="material-icons text-xl">favorite_border</span>
-        <span class="text-xs">Favoris</span>
+        <span class="text-xs">Galerie</span>
       </a>
       <a href="/profil" class="flex flex-col items-center justify-center py-3 text-gray-500">
         <span class="material-icons text-xl">person</span>

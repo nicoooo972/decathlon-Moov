@@ -112,8 +112,8 @@
       href="/routes" 
       class="flex flex-col items-center justify-center text-xs {$page.url.pathname.startsWith('/routes') ? 'text-[#0082C3]' : 'text-gray-500'}"
     >
-      <img src="/icons/ListDashes.svg" alt="Parcours" class="w-6 h-6 mb-1" />
-      <span>Parcours</span>
+      <img src="/icons/ListDashes.svg" alt="Activités" class="w-6 h-6 mb-1" />
+      <span>Activités</span>
     </a>
     <a 
       href="/map" 
@@ -126,8 +126,8 @@
       href="/favorites" 
       class="flex flex-col items-center justify-center text-xs {$page.url.pathname === '/favorites' ? 'text-[#0082C3]' : 'text-gray-500'}"
     >
-      <img src="/icons/ImageSquare.svg" alt="Favoris" class="w-6 h-6 mb-1" />
-      <span>Favoris</span>
+      <img src="/icons/ImageSquare.svg" alt="Galerie" class="w-6 h-6 mb-1" />
+      <span>Galerie</span>
     </a>
     <a 
       href="/profile" 

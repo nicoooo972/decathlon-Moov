@@ -23,6 +23,7 @@
   let recommendations: Route[] = [];
   let nearbyPOIs: Route[] = [];
   let userLocation = { latitude: 48.8566, longitude: 2.3522 }; // Paris par défaut
+  let stepsLoaded = false;
   
   // Contenu des écrans d'introduction
   const introScreens = [
@@ -88,7 +89,8 @@
   }
   
   async function loadUserSteps() {
-    if ($currentUser) {
+    if ($currentUser && !stepsLoaded) {
+      stepsLoaded = true; // Marquer comme chargé avant l'appel pour éviter les appels multiples
       userSteps = await getUserSteps();
       if (!userSteps) {
         userSteps = { total_steps: 0, last_updated: new Date().toISOString() };
@@ -201,7 +203,9 @@
       window.location.href = '/onboarding';
     } else {
       // Ne pas rediriger, juste arrêter le chargement
-      await loadUserSteps();
+      if (!stepsLoaded) {
+        await loadUserSteps();
+      }
       loading = false;
     }
   }
@@ -241,8 +245,10 @@
       showSplash = false;
       checkUserPreferences();
       
-      // Charger les données de pas
-      await loadUserSteps();
+      // Charger les données de pas (seulement si pas déjà chargées)
+      if (!stepsLoaded) {
+        await loadUserSteps();
+      }
       
       // Obtenir la position de l'utilisateur
       await getUserLocation();

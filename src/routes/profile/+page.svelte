@@ -185,7 +185,7 @@
                 class="hidden"
               />
             </div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Cliquez sur l'icône pour changer votre photo</p>
+            <p class="text-base text-gray-500 dark:text-gray-400">Cliquez sur l'icône pour changer votre photo</p>
           </div>
           
           <!-- Informations personnelles -->

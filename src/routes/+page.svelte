@@ -6,13 +6,15 @@
   import { getUserSteps, type UserSteps } from '$lib/services/steps';
   import { getPersonalizedRecommendations, getNearbyPOIs } from '$lib/services/recommendations';
   import type { Route } from '$lib/types';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
   import Loading from '$lib/components/ui/loading.svelte';
   import Button from '$lib/components/ui/button.svelte';
   import { browser } from '$app/environment';
   
   let loading = true;
   let showSplash = true;
+  let showInitialSplash = true; // Premier écran de splash (M)
+  let showSecondSplash = false; // Deuxième écran de splash (MOOV)
   let splashStep = 0;
   let authChecked = false;
   let userSteps: UserSteps | null = null;
@@ -46,6 +48,8 @@
   
   // Réagir aux changements de l'état de l'utilisateur
   $: if ($currentUser) {
+    showInitialSplash = false;
+    showSecondSplash = false;
     showSplash = false;
     checkUserPreferences();
   }
@@ -57,6 +61,31 @@
   
   // Calculer le dashoffset pour l'anneau de progression
   $: dashOffset = 251.2 - (251.2 * stepsPercentage / 100);
+  
+  // Fonction pour gérer la séquence des écrans de splash
+  function handleSplashSequence() {
+    console.log('Démarrage de la séquence de splash');
+    
+    // Garantir que le premier écran est affiché
+    showInitialSplash = true;
+    showSecondSplash = false;
+    
+    // Afficher le premier écran pendant 3 secondes
+    setTimeout(() => {
+      console.log('Transition vers le deuxième écran');
+      // Transition vers le deuxième écran
+      showInitialSplash = false;
+      showSecondSplash = true;
+      
+      // Afficher le deuxième écran pendant 3 secondes
+      setTimeout(() => {
+        console.log('Fin de la séquence de splash, redirection vers onboarding');
+        showSecondSplash = false;
+        // Forcer la redirection vers onboarding
+        window.location.href = '/onboarding';
+      }, 3000);
+    }, 3000);
+  }
   
   async function loadUserSteps() {
     if ($currentUser) {
@@ -122,8 +151,8 @@
       if ($currentUser) {
         checkUserPreferences();
       } else {
-        // Sinon, rediriger vers la page de connexion
-        goto('/login');
+        // Sinon, rediriger vers la page d'onboarding
+        window.location.href = '/onboarding';
       }
     }
   }
@@ -134,8 +163,8 @@
     if ($currentUser) {
       checkUserPreferences();
     } else {
-      // Sinon, rediriger vers la page de connexion
-      goto('/login');
+      // Sinon, rediriger vers la page d'onboarding
+      window.location.href = '/onboarding';
     }
   }
   
@@ -147,7 +176,7 @@
     
     if (!hasPrefs) {
       // Rediriger vers la page d'onboarding seulement si l'utilisateur n'a pas de préférences
-      goto('/onboarding');
+      window.location.href = '/onboarding';
     } else {
       // Ne pas rediriger, juste arrêter le chargement
       await loadUserSteps();
@@ -171,41 +200,67 @@
   }
   
   onMount(async () => {
+    console.log('onMount: Initialisation');
+    
+    // Vérifier si l'utilisateur est connecté
     if ($currentUser) {
+      console.log('onMount: Utilisateur connecté, pas de splash');
+      showInitialSplash = false;
+      showSecondSplash = false;
       showSplash = false;
       checkUserPreferences();
-    } else {
-      if (browser) {
-        const hasSeenIntro = localStorage.getItem('hasSeenIntro');
-        if (hasSeenIntro === 'true') {
-          showSplash = false;
-        } else {
-          localStorage.setItem('hasSeenIntro', 'true');
-        }
+      return; // Sortir de la fonction pour éviter d'exécuter le reste du code
+    }
+    
+    // Afficher la séquence d'écrans de splash pour les utilisateurs non connectés
+    if (browser) {
+      const hasSeenSplash = localStorage.getItem('hasSeenInitialSplash');
+      
+      if (hasSeenSplash === 'true') {
+        console.log('onMount: Splash déjà vu, redirection vers onboarding');
+        showInitialSplash = false;
+        showSecondSplash = false;
+        // Forcer la redirection vers onboarding
+        window.location.href = '/onboarding';
+      } else {
+        console.log('onMount: Premier accès, affichage du splash');
+        localStorage.setItem('hasSeenInitialSplash', 'true');
+        // Démarrer la séquence de splash
+        handleSplashSequence();
       }
     }
+    
     authChecked = true;
     loading = false;
 
     if (browser) {
-      const imagesToPreload = ['/logo.svg', '/logo-white.svg', '/placeholder.jpg'];
+      const imagesToPreload = [
+        '/logo.svg', 
+        '/logo-white.svg', 
+        '/placeholder.jpg', 
+        '/logo/Logo Moov\'.png',
+        '/logo/Logo Moov\'-full.png'
+      ];
       imagesToPreload.forEach(src => {
         const img = new Image();
         img.src = src;
       });
     }
     
-    // Charger les données de pas
-    await loadUserSteps();
-    
-    // Obtenir la position de l'utilisateur
-    await getUserLocation();
-    
-    // Charger les recommandations et les POIs à proximité
-    await Promise.all([
-      loadRecommendations(),
-      loadNearbyPOIs()
-    ]);
+    // Charger les données uniquement si l'utilisateur est connecté
+    if ($currentUser) {
+      // Charger les données de pas
+      await loadUserSteps();
+      
+      // Obtenir la position de l'utilisateur
+      await getUserLocation();
+      
+      // Charger les recommandations et les POIs à proximité
+      await Promise.all([
+        loadRecommendations(),
+        loadNearbyPOIs()
+      ]);
+    }
   });
 </script>
 
@@ -215,7 +270,25 @@
 
 <!-- Page d'accueil principale -->
 <div class="min-h-screen bg-white">
-  {#if loading}
+  {#if showInitialSplash}
+    <!-- Premier écran de splash (M) - sans animation -->
+    <div class="min-h-screen flex flex-col items-center justify-center bg-[#3643BA]">
+      <div class="flex flex-col items-center">
+        <img src="/logo/Logo Moov'.png" alt="M" class="w-[259px] h-[56.88px] mb-4" />
+        <p class="text-white text-xl font-medium">Pas à pas.</p>
+      </div>
+    </div>
+  {:else if showSecondSplash}
+    <!-- Deuxième écran de splash (MOOV) - avec animation simple -->
+    <div class="min-h-screen flex flex-col items-center justify-center bg-[#3643BA]">
+      <div class="flex flex-col items-center">
+        <div in:scale={{ duration: 800, start: 0, opacity: 0 }}>
+          <img src="/logo/Logo Moov'-full.png" alt="MOOV" class="w-[259px] mb-4" />
+        </div>
+        <p class="text-white text-xl font-medium">Pas à pas.</p>
+      </div>
+    </div>
+  {:else if loading}
     <div class="flex items-center justify-center min-h-screen">
       <Loading />
     </div>
@@ -311,7 +384,7 @@
                 <div class="p-2 h-[61.51px] flex flex-col justify-between">
                   <h3 class="font-medium text-sm truncate">{route.name}</h3>
                   <div class="flex justify-between text-xs">
-                    <span>{formatDuration(route.duration_minutes)}</span>
+                    <span>{formatDuration(route.duration_minutes || 0)}</span>
                     <span class={getDifficultyClass(route.difficulty)}>{route.difficulty}</span>
                   </div>
                 </div>

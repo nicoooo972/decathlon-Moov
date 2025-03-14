@@ -68,6 +68,7 @@
 </main>
 
 <!-- Navigation inférieure mobile -->
+{#if $currentUser}
 <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-[9999]">
   <div class="grid grid-cols-5 h-16">
     <a 
@@ -107,6 +108,7 @@
     </a>
   </div>
 </nav>
+{/if}
 
 <!-- Composants PWA -->
 <PwaInstall />

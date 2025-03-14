@@ -13,7 +13,7 @@
   
   // Étape actuelle du processus d'onboarding
   let currentStep = 0; // Commencer à 0 pour l'introduction
-  const totalSteps = 5; // Ajout d'une étape d'introduction
+  const totalSteps = 7; // 3 écrans d'introduction + 4 étapes de préférences
   
   // Données du formulaire
   let role: UserRole = 'parent';
@@ -39,21 +39,9 @@
     { value: 'adulte', label: '18+ ans' }
   ];
   
-  // Contenu des slides d'introduction
-  const introSlides = [
-    {
-      title: "Bienvenue sur Moov",
-      description: "Découvrez une nouvelle façon d'explorer votre ville et ses trésors cachés.",
-      icon: "explore",
-      image: "/intro-slide-1.jpg"
-    }
-  ];
-  
   onMount(() => {
-    // Rediriger vers la page de connexion si l'utilisateur n'est pas connecté
-    if (!$currentUser) {
-      goto('/login');
-    }
+    // Ne pas rediriger vers la page de connexion si l'utilisateur n'est pas connecté
+    // Les utilisateurs non connectés doivent pouvoir accéder à l'onboarding
   });
   
   function nextStep() {
@@ -85,28 +73,41 @@
   }
   
   async function savePreferences() {
-    if (!$currentUser) return;
-    
     try {
       await withLoading(async () => {
-        // Vérifier si l'utilisateur a un profil complet
-        if (!$currentUser.first_name) {
-          // Rafraîchir les données utilisateur pour s'assurer que nous avons les dernières informations
-          await refreshUserData();
+        if ($currentUser) {
+          // Vérifier si l'utilisateur a un profil complet
+          if (!$currentUser.first_name) {
+            // Rafraîchir les données utilisateur pour s'assurer que nous avons les dernières informations
+            await refreshUserData();
+          }
+          
+          // Enregistrer les préférences
+          await saveUserPreferences(
+            $currentUser.id,
+            role,
+            activityPreferences,
+            ageGroups,
+            maxDistanceKm,
+            accessibilityNeeds
+          );
+          
+          showNotification('Préférences enregistrées avec succès !', 'success');
+          goto('/');
+        } else {
+          // Si l'utilisateur n'est pas connecté, le rediriger vers la page d'inscription
+          // avec les préférences stockées temporairement dans localStorage
+          localStorage.setItem('tempPreferences', JSON.stringify({
+            role,
+            activity_preferences: activityPreferences,
+            age_groups: ageGroups,
+            max_distance_km: maxDistanceKm,
+            accessibility_needs: accessibilityNeeds
+          }));
+          
+          showNotification('Veuillez créer un compte pour continuer', 'info');
+          goto('/register');
         }
-        
-        // Enregistrer les préférences
-        await saveUserPreferences(
-          $currentUser.id,
-          role,
-          activityPreferences,
-          ageGroups,
-          maxDistanceKm,
-          accessibilityNeeds
-        );
-        
-        showNotification('Préférences enregistrées avec succès', 'success');
-        goto('/map');
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -120,107 +121,132 @@
   <title>Bienvenue | Moov</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-md mx-auto">
-    <div class="text-center mb-8">
-      <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
-      
-      {#if currentStep === 0}
-        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
-          Bienvenue sur Moov
-        </h2>
-        <p class="mt-2 text-sm text-gray-600">
-          Découvrez comment fonctionne l'application
+{#if currentStep === 0}
+  <!-- Première page d'onboarding avec fond bleu, logo, texte et nuages -->
+  <div class="min-h-screen bg-[#3643BA] flex flex-col">
+    <!-- Logo et texte en haut -->
+    <div class="px-6 pt-24">
+      <div class="px-[24px]">
+        <img src="/logo/Logo Moov'-full.png" alt="Moov" class="w-[159px] h-[35.12px] ml-2" />
+        <div class="mt-2 w-[265px] h-[72px] bg-[#3643BA] rounded p-3">
+          <p class="text-[#FCFCFB] text-[20px] leading-[120%] font-bold" style="font-family: 'Inter', sans-serif; letter-spacing: 0%;">
+            Marchez, explorez et profitez du mouvement en toute simplicité
+          </p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Nuages en bas -->
+    <div class="mt-auto relative">
+      <img src="/images/Nuages.svg" alt="Nuages" class="w-full" />
+    </div>
+    
+    <!-- Bouton Suivant -->
+    <div class="absolute bottom-8 left-0 right-0 px-6">
+      <button 
+        class="w-[327px] h-[56px] bg-[#3643BA] rounded-[8px] text-white font-medium flex items-center justify-center gap-2 p-4"
+        style="margin: 0 auto;"
+        on:click={nextStep}
+      >
+        <span>Suivant</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+{:else if currentStep === 1}
+  <!-- Deuxième page d'onboarding avec fond personnalisé et texte au milieu -->
+  <div class="min-h-screen flex flex-col relative">
+    <!-- Image de fond -->
+    <img src="/images/fond.png" alt="Fond" class="absolute inset-0 w-full h-full object-cover" />
+    
+    <!-- Texte directement sur le fond bleu -->
+    <div class="flex-1 flex flex-col justify-center z-10 px-6">
+      <div class="mt-auto mb-auto">
+        <p class="text-[#FCFCFB] text-[24px] leading-[120%] font-bold text-left pl-4" style="font-family: 'Inter', sans-serif; letter-spacing: 0%; max-width: 300px;">
+          Partez à la découverte de lieux et d'événements autour de vous !
         </p>
-      {:else}
+      </div>
+    </div>
+    
+    <!-- Bouton Suivant -->
+    <div class="absolute bottom-8 left-0 right-0 px-6 z-10">
+      <button 
+        class="w-[327px] h-[56px] bg-[#FFFFFF] rounded-[8px] text-[#3643BA] font-medium flex items-center justify-center gap-2 p-4"
+        style="margin: 0 auto;"
+        on:click={nextStep}
+      >
+        <span>Suivant</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+{:else if currentStep === 2}
+  <!-- Troisième page d'onboarding avec nuage rose, mascottes et texte en haut -->
+  <div class="min-h-screen bg-[#3643BA] flex flex-col relative">
+    <!-- Texte en haut -->
+    <div class="pt-36 px-6 z-10">
+      <p class="text-[#FCFCFB] text-[24px] leading-[120%] font-bold" style="font-family: 'Inter', sans-serif; letter-spacing: 0%; max-width: 300px;">
+        Capturez vos moment et gardez les en souvenir !
+      </p>
+    </div>
+    
+    <!-- Nuage rose en bas -->
+    <div class="mt-auto relative">
+      <img src="/images/nuage rose.png" alt="Nuage rose" class="w-full" />
+    </div>
+    
+    <!-- Mascottes par-dessus le nuage -->
+    <div class="absolute bottom-0 left-0 right-0 z-10">
+      <img src="/images/mascottes.png" alt="Mascottes" class="w-full" />
+    </div>
+    
+    <!-- Bouton C'est parti -->
+    <div class="absolute bottom-8 left-0 right-0 px-6 z-20">
+      <button 
+        class="w-[327px] h-[56px] bg-[#E0FF96] rounded-[8px] text-[#3643BA] font-medium flex items-center justify-center gap-2 p-4"
+        style="margin: 0 auto;"
+        on:click={() => goto('/login')}
+      >
+        <span>C'est parti !</span>
+      </button>
+    </div>
+  </div>
+{:else if currentStep === 3}
+  <!-- Étape 1: Rôle -->
+  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md mx-auto">
+      <div class="text-center mb-8">
+        <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
         <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
           Personnalisez votre expérience
         </h2>
         <p class="mt-2 text-sm text-gray-600">
-          Étape {currentStep} sur {totalSteps - 1}
+          Étape {currentStep - 2} sur {totalSteps - 3}
         </p>
-      {/if}
-      
-      <!-- Indicateur de progression -->
-      <div class="mt-4 flex justify-between bg-gray-200 rounded-full h-2.5">
-        {#each Array(totalSteps) as _, i}
-          <div 
-            class="h-2.5 rounded-full transition-all duration-300 ease-in-out" 
-            class:bg-[#0082C3]={i <= currentStep}
-            class:bg-gray-200={i > currentStep}
-            style="width: {100 / totalSteps}%"
-          ></div>
-        {/each}
-      </div>
-    </div>
-    
-    <div class="bg-white shadow rounded-lg p-6">
-      {#if $isLoading}
-        <div class="flex justify-center items-center h-64">
-          <Loading size="lg" />
-        </div>
-      {:else}
-        <!-- Étape 0: Introduction au concept -->
-        {#if currentStep === 0}
-          <div class="space-y-6" in:fade={{ duration: 300 }}>
-            <div class="relative h-48 rounded-lg overflow-hidden mb-6">
-              <img 
-                src="/intro-concept.jpg" 
-                alt="Moov concept" 
-                class="w-full h-full object-cover"
-                on:error={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (target) target.src = 'https://via.placeholder.com/600x300?text=Moov';
-                }}
-              />
-              <div class="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex items-end">
-                <div class="p-4 text-white">
-                  <h3 class="text-xl font-bold">Explorez. Découvrez. Partagez.</h3>
-                </div>
-              </div>
-            </div>
-            
-            <h3 class="text-lg font-medium text-gray-900">Qu'est-ce que Moov ?</h3>
-            <p class="text-gray-600">
-              Moov est votre compagnon d'exploration urbaine qui vous aide à découvrir votre ville sous un nouveau jour.
-            </p>
-            
-            <div class="space-y-4 mt-6">
-              <div class="flex items-start">
-                <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
-                  <span class="material-icons text-[#0082C3]">map</span>
-                </div>
-                <div class="ml-4">
-                  <h4 class="text-base font-medium text-gray-900">Parcours personnalisés</h4>
-                  <p class="text-sm text-gray-500">Des itinéraires adaptés à vos centres d'intérêt et à votre famille.</p>
-                </div>
-              </div>
-              
-              <div class="flex items-start">
-                <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
-                  <span class="material-icons text-[#0082C3]">location_on</span>
-                </div>
-                <div class="ml-4">
-                  <h4 class="text-base font-medium text-gray-900">Points d'intérêt</h4>
-                  <p class="text-sm text-gray-500">Découvrez des lieux fascinants avec des informations détaillées et des activités.</p>
-                </div>
-              </div>
-              
-              <div class="flex items-start">
-                <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
-                  <span class="material-icons text-[#0082C3]">shopping_bag</span>
-                </div>
-                <div class="ml-4">
-                  <h4 class="text-base font-medium text-gray-900">Équipement recommandé</h4>
-                  <p class="text-sm text-gray-500">Des suggestions de produits pour profiter pleinement de vos aventures.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        {/if}
         
-        <!-- Étape 1: Rôle -->
-        {#if currentStep === 1}
+        <!-- Indicateur de progression -->
+        <div class="mt-4 flex justify-between bg-gray-200 rounded-full h-2.5">
+          {#each Array(totalSteps - 2) as _, i}
+            <div 
+              class="h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+              class:bg-[#0082C3]={i <= currentStep - 3}
+              class:bg-gray-200={i > currentStep - 3}
+              style="width: {100 / (totalSteps - 2)}%"
+            ></div>
+          {/each}
+        </div>
+      </div>
+      
+      <div class="bg-white shadow rounded-lg p-6">
+        {#if $isLoading}
+          <div class="flex justify-center items-center h-64">
+            <Loading size="lg" />
+          </div>
+        {:else}
           <div class="space-y-6" in:fade={{ duration: 300 }}>
             <h3 class="text-lg font-medium text-gray-900">Qui êtes-vous ?</h3>
             <p class="text-sm text-gray-500">
@@ -255,10 +281,59 @@
               </div>
             </div>
           </div>
+          
+          <!-- Boutons de navigation -->
+          <div class="mt-8 flex justify-between">
+            <Button 
+              variant="outline" 
+              on:click={prevStep}
+            >
+              Précédent
+            </Button>
+            
+            <Button 
+              variant="primary" 
+              on:click={nextStep}
+            >
+              Suivant
+            </Button>
+          </div>
         {/if}
+      </div>
+    </div>
+  </div>
+{:else if currentStep === 4}
+  <!-- Étape 2: Préférences d'activités -->
+  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md mx-auto">
+      <div class="text-center mb-8">
+        <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
+        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
+          Personnalisez votre expérience
+        </h2>
+        <p class="mt-2 text-sm text-gray-600">
+          Étape {currentStep - 2} sur {totalSteps - 3}
+        </p>
         
-        <!-- Étape 2: Préférences d'activités -->
-        {#if currentStep === 2}
+        <!-- Indicateur de progression -->
+        <div class="mt-4 flex justify-between bg-gray-200 rounded-full h-2.5">
+          {#each Array(totalSteps - 2) as _, i}
+            <div 
+              class="h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+              class:bg-[#0082C3]={i <= currentStep - 3}
+              class:bg-gray-200={i > currentStep - 3}
+              style="width: {100 / (totalSteps - 2)}%"
+            ></div>
+          {/each}
+        </div>
+      </div>
+      
+      <div class="bg-white shadow rounded-lg p-6">
+        {#if $isLoading}
+          <div class="flex justify-center items-center h-64">
+            <Loading size="lg" />
+          </div>
+        {:else}
           <div class="space-y-6" in:fade={{ duration: 300 }}>
             <h3 class="text-lg font-medium text-gray-900">Quelles activités vous intéressent ?</h3>
             <p class="text-sm text-gray-500">
@@ -279,10 +354,60 @@
               {/each}
             </div>
           </div>
+          
+          <!-- Boutons de navigation -->
+          <div class="mt-8 flex justify-between">
+            <Button 
+              variant="outline" 
+              on:click={prevStep}
+            >
+              Précédent
+            </Button>
+            
+            <Button 
+              variant="primary" 
+              on:click={nextStep}
+              disabled={activityPreferences.length === 0}
+            >
+              Suivant
+            </Button>
+          </div>
         {/if}
+      </div>
+    </div>
+  </div>
+{:else if currentStep === 5}
+  <!-- Étape 3: Tranches d'âge -->
+  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md mx-auto">
+      <div class="text-center mb-8">
+        <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
+        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
+          Personnalisez votre expérience
+        </h2>
+        <p class="mt-2 text-sm text-gray-600">
+          Étape {currentStep - 2} sur {totalSteps - 3}
+        </p>
         
-        <!-- Étape 3: Tranches d'âge -->
-        {#if currentStep === 3}
+        <!-- Indicateur de progression -->
+        <div class="mt-4 flex justify-between bg-gray-200 rounded-full h-2.5">
+          {#each Array(totalSteps - 2) as _, i}
+            <div 
+              class="h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+              class:bg-[#0082C3]={i <= currentStep - 3}
+              class:bg-gray-200={i > currentStep - 3}
+              style="width: {100 / (totalSteps - 2)}%"
+            ></div>
+          {/each}
+        </div>
+      </div>
+      
+      <div class="bg-white shadow rounded-lg p-6">
+        {#if $isLoading}
+          <div class="flex justify-center items-center h-64">
+            <Loading size="lg" />
+          </div>
+        {:else}
           <div class="space-y-6" in:fade={{ duration: 300 }}>
             <h3 class="text-lg font-medium text-gray-900">Tranches d'âge</h3>
             <p class="text-sm text-gray-500">
@@ -308,10 +433,60 @@
               {/each}
             </div>
           </div>
+          
+          <!-- Boutons de navigation -->
+          <div class="mt-8 flex justify-between">
+            <Button 
+              variant="outline" 
+              on:click={prevStep}
+            >
+              Précédent
+            </Button>
+            
+            <Button 
+              variant="primary" 
+              on:click={nextStep}
+              disabled={ageGroups.length === 0}
+            >
+              Suivant
+            </Button>
+          </div>
         {/if}
+      </div>
+    </div>
+  </div>
+{:else if currentStep === 6}
+  <!-- Étape 4: Distance et accessibilité -->
+  <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md mx-auto">
+      <div class="text-center mb-8">
+        <img class="mx-auto h-12 w-auto" src="/logo.svg" alt="Moov" />
+        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
+          Personnalisez votre expérience
+        </h2>
+        <p class="mt-2 text-sm text-gray-600">
+          Étape {currentStep - 2} sur {totalSteps - 3}
+        </p>
         
-        <!-- Étape 4: Distance et accessibilité -->
-        {#if currentStep === 4}
+        <!-- Indicateur de progression -->
+        <div class="mt-4 flex justify-between bg-gray-200 rounded-full h-2.5">
+          {#each Array(totalSteps - 2) as _, i}
+            <div 
+              class="h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+              class:bg-[#0082C3]={i <= currentStep - 3}
+              class:bg-gray-200={i > currentStep - 3}
+              style="width: {100 / (totalSteps - 2)}%"
+            ></div>
+          {/each}
+        </div>
+      </div>
+      
+      <div class="bg-white shadow rounded-lg p-6">
+        {#if $isLoading}
+          <div class="flex justify-center items-center h-64">
+            <Loading size="lg" />
+          </div>
+        {:else}
           <div class="space-y-6" in:fade={{ duration: 300 }}>
             <h3 class="text-lg font-medium text-gray-900">Distance et accessibilité</h3>
             
@@ -348,30 +523,16 @@
               </div>
             </div>
           </div>
-        {/if}
-        
-        <!-- Boutons de navigation -->
-        <div class="mt-8 flex justify-between">
-          {#if currentStep > 0}
+          
+          <!-- Boutons de navigation -->
+          <div class="mt-8 flex justify-between">
             <Button 
               variant="outline" 
               on:click={prevStep}
             >
               Précédent
             </Button>
-          {:else}
-            <div></div> <!-- Espace vide pour maintenir l'alignement -->
-          {/if}
-          
-          {#if currentStep < totalSteps - 1}
-            <Button 
-              variant="primary" 
-              on:click={nextStep}
-              disabled={currentStep === 2 && activityPreferences.length === 0 || currentStep === 3 && ageGroups.length === 0}
-            >
-              Suivant
-            </Button>
-          {:else}
+            
             <Button 
               variant="primary" 
               on:click={savePreferences}
@@ -380,9 +541,9 @@
             >
               Commencer
             </Button>
-          {/if}
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
-</div> 
+{/if} 

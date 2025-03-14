@@ -171,4 +171,32 @@ export async function updateProfile(profile: Partial<User>) {
   
   await refreshUserData();
   return data;
+}
+
+// Connexion avec Google
+export async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: 'https://vzxnfzbgyuoohbocullm.supabase.co/auth/v1/callback'
+    }
+  });
+  
+  if (error) throw error;
+  
+  return data;
+}
+
+// Connexion avec Facebook
+export async function signInWithFacebook() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'facebook',
+    options: {
+      redirectTo: 'https://vzxnfzbgyuoohbocullm.supabase.co/auth/v1/callback'
+    }
+  });
+  
+  if (error) throw error;
+  
+  return data;
 } 

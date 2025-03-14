@@ -151,6 +151,8 @@ const updateStats = (lastPosition: GeolocationPosition, currentPosition: Geoloca
         ...stats,
         distance: stats.distance + distance,
         duration: stats.duration + timeDiff,
-        speed: currentPosition.coords.speed || (distance / timeDiff)
+        speed: currentPosition.coords.speed !== null && currentPosition.coords.speed !== undefined 
+            ? currentPosition.coords.speed 
+            : (distance / timeDiff)
     }));
 }; 

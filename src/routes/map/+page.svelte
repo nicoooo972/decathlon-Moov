@@ -8,6 +8,8 @@
   import { withLoading, showNotification } from '$lib/stores/app-store';
   import { browser } from '$app/environment';
   import type { Route, RoutePoint } from '$lib/types';
+  import { supabase } from '$lib/supabaseClient';
+  import { favoritePOIs, toggleFavorite, checkIfFavorite, loadUserFavorites } from '$lib/stores/favorites-store';
   
   // Interface étendue pour les POIs avec des propriétés supplémentaires
   interface ExtendedRoutePoint extends RoutePoint {
@@ -79,6 +81,9 @@
     
     // Initialiser la carte de manière asynchrone
     initializeMap();
+    
+    // Charger les favoris au montage du composant
+    loadUserFavorites();
     
     // Fonction de nettoyage
     return () => {
@@ -936,6 +941,31 @@
       secs.toString().padStart(2, '0')
     ].join(':');
   }
+
+  // Vérifier si un POI est sélectionné et s'il est dans les favoris
+  $: if (selectedPOI && selectedPOI.id && !$favoritePOIs.has(selectedPOI.id)) {
+    checkIfFavorite(selectedPOI.id);
+  }
+
+  async function handleToggleFavorite(poi: ExtendedRoutePoint) {
+    if (!$currentUser) {
+      showNotification('Veuillez vous connecter pour ajouter aux favoris', 'error');
+      return;
+    }
+    
+    try {
+      const isFavorite = await toggleFavorite(poi.id);
+      
+      if (isFavorite) {
+        showNotification('Ajouté aux favoris avec succès!', 'success');
+      } else {
+        showNotification('Retiré des favoris', 'success');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la gestion des favoris:', error);
+      showNotification('Erreur lors de la gestion des favoris', 'error');
+    }
+  }
 </script>
 
 <svelte:head>
@@ -1045,7 +1075,9 @@
                     src={selectedPOI.image_url} 
                     alt={selectedPOI.name} 
                     class="w-full h-full object-cover"
-                    on:error={handleImageError}
+                    on:error={(e) => {
+                      e.target.outerHTML = '<div class="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">N/A</div>';
+                    }}
                   >
                 </div>
               {/if}
@@ -1087,7 +1119,9 @@
                     src={selectedPOI.image_url} 
                     alt={selectedPOI.name} 
                     class="w-full h-48 object-cover"
-                    on:error={handleImageError}
+                    on:error={(e) => {
+                      e.target.outerHTML = '<div class="w-full h-48 bg-gray-200 flex items-center justify-center text-gray-500">Image non disponible</div>';
+                    }}
                   >
                 </div>
               {/if}
@@ -1121,10 +1155,23 @@
               
               <!-- Bouton "Allons-y" -->
               <button 
-                class="w-full bg-[#0082C3] text-white py-3 mb-4 font-medium text-center"
+                class="w-full bg-[#3643BA] text-white py-3 mb-4 font-medium text-center rounded-lg"
                 on:click={() => selectedPOI && startNavigation(selectedPOI)}
               >
                 Allons-y
+              </button>
+              
+              <!-- Bouton "Enregistrer" -->
+              <button 
+                class="w-full border {$favoritePOIs.has(selectedPOI?.id || -1) ? 'bg-[#3643BA] text-white' : 'border-[#3643BA] text-[#3643BA]'} py-3 mb-4 font-medium text-center flex items-center justify-center rounded-lg"
+                on:click={() => selectedPOI && handleToggleFavorite(selectedPOI)}
+              >
+                <img 
+                  src={$favoritePOIs.has(selectedPOI?.id || -1) ? "/icons_maps/HeartFilled.svg" : "/icons_maps/Heart.svg"} 
+                  alt="Favoris" 
+                  class="w-5 h-5 mr-2"
+                >
+                {$favoritePOIs.has(selectedPOI?.id || -1) ? 'Enregistré' : 'Enregistrer'}
               </button>
               
               <!-- Badges d'information -->
@@ -1159,7 +1206,9 @@
                             src={product.image_url} 
                             alt={product.name} 
                             class="w-full h-24 object-contain mb-2"
-                            on:error={handleImageError}
+                            on:error={(e) => {
+                              e.target.outerHTML = '<div class="w-full h-24 bg-gray-100 flex items-center justify-center text-xs text-gray-500 mb-2">Image non disponible</div>';
+                            }}
                           >
                         {/if}
                         <div class="text-xs font-medium">{product.name}</div>
@@ -1309,7 +1358,7 @@
   </div>
 
   <!-- Barre de recherche -->
-  <div class="absolute bottom-32 left-4 right-4 z-20 flex justify-center gap-2">
+  <div class="absolute {selectedPOI ? 'bottom-4' : 'bottom-32'} left-4 right-4 z-20 flex justify-center gap-2">
     <div class="w-[263px] h-[56px] bg-white rounded-lg shadow-lg flex items-center px-4">
       <span class="material-icons text-gray-400 mr-2">search</span>
       <input 

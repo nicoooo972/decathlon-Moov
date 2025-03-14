@@ -222,6 +222,15 @@
   }
   
   onMount(async () => {
+    // Réinitialiser les styles du body pour permettre le défilement
+    document.body.style.overflow = 'auto';
+    document.body.style.position = 'static';
+    document.body.style.width = 'auto';
+    document.body.style.height = 'auto';
+    
+    // Supprimer la classe map-page si elle existe
+    document.body.classList.remove('map-page');
+    
     console.log('onMount: Initialisation');
     
     // Vérifier si l'utilisateur est connecté

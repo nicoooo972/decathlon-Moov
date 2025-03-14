@@ -91,7 +91,7 @@
     if (!browser) return;
     
     // Désactiver le scroll sur le body quand on est sur la page carte
-    document.body.style.overflow = 'hidden';
+    document.body.classList.add('no-scroll');
     
     // Initialiser la carte de manière asynchrone
     initializeMap();
@@ -102,7 +102,7 @@
     // Fonction de nettoyage
     return () => {
       // Réactiver le scroll sur le body quand on quitte la page
-      document.body.style.overflow = '';
+      document.body.classList.remove('no-scroll');
       
       // Nettoyer les ressources
       if (watchId) {

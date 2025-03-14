@@ -31,6 +31,15 @@
   let loadingStats = false;
   
   onMount(() => {
+    // Réinitialiser les styles du body pour permettre le défilement
+    document.body.style.overflow = 'auto';
+    document.body.style.position = 'static';
+    document.body.style.width = 'auto';
+    document.body.style.height = 'auto';
+    
+    // Supprimer la classe map-page si elle existe
+    document.body.classList.remove('map-page');
+    
     // S'abonner au store currentUser
     const unsubscribe = currentUser.subscribe(async (value) => {
       user = value;

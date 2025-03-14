@@ -70,6 +70,24 @@
 	<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </svelte:head>
 
+<style>
+  /* Assurer que le défilement fonctionne correctement sur toutes les pages */
+  :global(body) {
+    overflow-y: auto !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+  }
+  
+  /* Sauf pour les pages spécifiques qui ont besoin de désactiver le défilement */
+  :global(body.no-scroll) {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+</style>
+
 <main class="pb-16">
 	<slot />
 </main>

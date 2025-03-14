@@ -18,6 +18,13 @@
     acceptCGU: ''
   };
   
+  onMount(() => {
+    if (browser) {
+      // Ajouter la classe no-scroll au body
+      document.body.classList.add('no-scroll');
+    }
+  });
+  
   function validateForm() {
     let isValid = true;
     errors = {
@@ -247,11 +254,11 @@
 </div>
 
 <style>
-  /* Empêcher le scroll sur le body */
-  :global(body) {
+  /* Supprimer les styles inline qui empêchent le défilement */
+  /* :global(body) {
     overflow: hidden;
     position: fixed;
     width: 100%;
     height: 100%;
-  }
+  } */
 </style> 

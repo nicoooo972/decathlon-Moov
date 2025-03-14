@@ -17,6 +17,9 @@
   // Vérifier si on est dans une boucle de redirection
   onMount(() => {
     if (browser) {
+      // Ajouter la classe no-scroll au body
+      document.body.classList.add('no-scroll');
+      
       // Vérifier si on vient d'être redirigé
       const redirectCount = parseInt(sessionStorage.getItem('redirectCount') || '0', 10);
       
@@ -218,11 +221,11 @@
 </div>
 
 <style>
-  /* Empêcher le scroll sur le body */
-  :global(body) {
+  /* Supprimer les styles inline qui empêchent le défilement */
+  /* :global(body) {
     overflow: hidden;
     position: fixed;
     width: 100%;
     height: 100%;
-  }
+  } */
 </style> 

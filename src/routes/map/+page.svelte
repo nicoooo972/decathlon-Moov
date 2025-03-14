@@ -1298,8 +1298,8 @@
             <button 
               class="w-full border border-[#0082C3] text-[#0082C3] text-center py-3 font-semibold hover:bg-blue-50 transition-colors"
               on:click={() => {
-                if (map && userMarker) {
-                  map.setCenter(userMarker.getPosition()!);
+                if (map && userMarker && userMarker.getPosition()) {
+                  map.setCenter(userMarker.getPosition());
                   map.setZoom(16);
                 }
               }}

@@ -11,7 +11,7 @@
   import { startTracking, stopTracking, isTracking } from '$lib/services/tracking-service';
   import TrackingMap from '$lib/components/tracking-map.svelte';
   
-  export let data;
+  export const data = {};
   let route: Route | null = null;
   
   let isLoading = true;
@@ -300,10 +300,15 @@
               <div class="md:flex">
                 <div class="md:w-1/3">
                   <img 
-                    src={point.image_url || '/images/poi-placeholder.jpg'} 
+                    src={point.image_url || '/images/poi-placeholder.jpg'}
                     alt={point.name}
                     class="h-48 w-full object-cover md:h-full"
-                    on:error={(e) => (e.target as HTMLImageElement).src = '/images/poi-placeholder.jpg'}
+                    on:error={e => {
+                      const target = e.target;
+                      if (target instanceof HTMLImageElement) {
+                        target.src = '/images/poi-placeholder.jpg';
+                      }
+                    }}
                   />
                 </div>
                 <div class="p-6 md:w-2/3">
@@ -321,10 +326,15 @@
                           class="flex items-center border rounded-lg p-2 hover:bg-gray-50 transition-colors"
                         >
                           <img 
-                            src={product.image_url} 
+                            src={product.image_url || '/images/product-placeholder.jpg'}
                             alt={product.name}
                             class="w-12 h-12 object-contain mr-3"
-                            on:error={(e) => (e.target as HTMLImageElement).src = '/images/product-placeholder.jpg'}
+                            on:error={e => {
+                              const target = e.target;
+                              if (target instanceof HTMLImageElement) {
+                                target.src = '/images/product-placeholder.jpg';
+                              }
+                            }}
                           />
                           <div>
                             <p class="font-medium text-gray-800">{product.name}</p>

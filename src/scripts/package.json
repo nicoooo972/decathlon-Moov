@@ -1,0 +1,9 @@
+{
+  "name": "supabase-data-scripts",
+  "version": "1.0.0",
+  "description": "Scripts pour gérer les données Supabase",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "dotenv": "^16.3.1"
+  }
+} 

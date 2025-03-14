@@ -1,0 +1,191 @@
+[1mdiff --git a/src/routes/+page.svelte b/src/routes/+page.svelte[m
+[1mindex 30b721b..3228c48 100644[m
+[1m--- a/src/routes/+page.svelte[m
+[1m+++ b/src/routes/+page.svelte[m
+[36m@@ -6,13 +6,15 @@[m
+   import { getUserSteps, type UserSteps } from '$lib/services/steps';[m
+   import { getPersonalizedRecommendations, getNearbyPOIs } from '$lib/services/recommendations';[m
+   import type { Route } from '$lib/types';[m
+[31m-  import { fade, fly } from 'svelte/transition';[m
+[32m+[m[32m  import { fade, fly, scale } from 'svelte/transition';[m
+   import Loading from '$lib/components/ui/loading.svelte';[m
+   import Button from '$lib/components/ui/button.svelte';[m
+   import { browser } from '$app/environment';[m
+   [m
+   let loading = true;[m
+   let showSplash = true;[m
+[32m+[m[32m  let showInitialSplash = true; // Premier écran de splash (M)[m
+[32m+[m[32m  let showSecondSplash = false; // Deuxième écran de splash (MOOV)[m
+   let splashStep = 0;[m
+   let authChecked = false;[m
+   let userSteps: UserSteps | null = null;[m
+[36m@@ -46,6 +48,8 @@[m
+   [m
+   // Réagir aux changements de l'état de l'utilisateur[m
+   $: if ($currentUser) {[m
+[32m+[m[32m    showInitialSplash = false;[m
+[32m+[m[32m    showSecondSplash = false;[m
+     showSplash = false;[m
+     checkUserPreferences();[m
+   }[m
+[36m@@ -58,6 +62,31 @@[m
+   // Calculer le dashoffset pour l'anneau de progression[m
+   $: dashOffset = 251.2 - (251.2 * stepsPercentage / 100);[m
+   [m
+[32m+[m[32m  // Fonction pour gérer la séquence des écrans de splash[m
+[32m+[m[32m  function handleSplashSequence() {[m
+[32m+[m[32m    console.log('Démarrage de la séquence de splash');[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Garantir que le premier écran est affiché[m
+[32m+[m[32m    showInitialSplash = true;[m
+[32m+[m[32m    showSecondSplash = false;[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Afficher le premier écran pendant 3 secondes[m
+[32m+[m[32m    setTimeout(() => {[m
+[32m+[m[32m      console.log('Transition vers le deuxième écran');[m
+[32m+[m[32m      // Transition vers le deuxième écran[m
+[32m+[m[32m      showInitialSplash = false;[m
+[32m+[m[32m      showSecondSplash = true;[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Afficher le deuxième écran pendant 3 secondes[m
+[32m+[m[32m      setTimeout(() => {[m
+[32m+[m[32m        console.log('Fin de la séquence de splash, redirection vers onboarding');[m
+[32m+[m[32m        showSecondSplash = false;[m
+[32m+[m[32m        // Forcer la redirection vers onboarding[m
+[32m+[m[32m        window.location.href = '/onboarding';[m
+[32m+[m[32m      }, 3000);[m
+[32m+[m[32m    }, 3000);[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+   async function loadUserSteps() {[m
+     if ($currentUser) {[m
+       userSteps = await getUserSteps();[m
+[36m@@ -122,8 +151,8 @@[m
+       if ($currentUser) {[m
+         checkUserPreferences();[m
+       } else {[m
+[31m-        // Sinon, rediriger vers la page de connexion[m
+[31m-        goto('/login');[m
+[32m+[m[32m        // Sinon, rediriger vers la page d'onboarding[m
+[32m+[m[32m        window.location.href = '/onboarding';[m
+       }[m
+     }[m
+   }[m
+[36m@@ -134,8 +163,8 @@[m
+     if ($currentUser) {[m
+       checkUserPreferences();[m
+     } else {[m
+[31m-      // Sinon, rediriger vers la page de connexion[m
+[31m-      goto('/login');[m
+[32m+[m[32m      // Sinon, rediriger vers la page d'onboarding[m
+[32m+[m[32m      window.location.href = '/onboarding';[m
+     }[m
+   }[m
+   [m
+[36m@@ -147,7 +176,7 @@[m
+     [m
+     if (!hasPrefs) {[m
+       // Rediriger vers la page d'onboarding seulement si l'utilisateur n'a pas de préférences[m
+[31m-      goto('/onboarding');[m
+[32m+[m[32m      window.location.href = '/onboarding';[m
+     } else {[m
+       // Ne pas rediriger, juste arrêter le chargement[m
+       await loadUserSteps();[m
+[36m@@ -171,41 +200,67 @@[m
+   }[m
+   [m
+   onMount(async () => {[m
+[32m+[m[32m    console.log('onMount: Initialisation');[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Vérifier si l'utilisateur est connecté[m
+     if ($currentUser) {[m
+[32m+[m[32m      console.log('onMount: Utilisateur connecté, pas de splash');[m
+[32m+[m[32m      showInitialSplash = false;[m
+[32m+[m[32m      showSecondSplash = false;[m
+       showSplash = false;[m
+       checkUserPreferences();[m
+[31m-    } else {[m
+[31m-      if (browser) {[m
+[31m-        const hasSeenIntro = localStorage.getItem('hasSeenIntro');[m
+[31m-        if (hasSeenIntro === 'true') {[m
+[31m-          showSplash = false;[m
+[31m-        } else {[m
+[31m-          localStorage.setItem('hasSeenIntro', 'true');[m
+[31m-        }[m
+[32m+[m[32m      return; // Sortir de la fonction pour éviter d'exécuter le reste du code[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Afficher la séquence d'écrans de splash pour les utilisateurs non connectés[m
+[32m+[m[32m    if (browser) {[m
+[32m+[m[32m      const hasSeenSplash = localStorage.getItem('hasSeenInitialSplash');[m
+[32m+[m[41m      [m
+[32m+[m[32m      if (hasSeenSplash === 'true') {[m
+[32m+[m[32m        console.log('onMount: Splash déjà vu, redirection vers onboarding');[m
+[32m+[m[32m        showInitialSplash = false;[m
+[32m+[m[32m        showSecondSplash = false;[m
+[32m+[m[32m        // Forcer la redirection vers onboarding[m
+[32m+[m[32m        window.location.href = '/onboarding';[m
+[32m+[m[32m      } else {[m
+[32m+[m[32m        console.log('onMount: Premier accès, affichage du splash');[m
+[32m+[m[32m        localStorage.setItem('hasSeenInitialSplash', 'true');[m
+[32m+[m[32m        // Démarrer la séquence de splash[m
+[32m+[m[32m        handleSplashSequence();[m
+       }[m
+     }[m
+[32m+[m[41m    [m
+     authChecked = true;[m
+     loading = false;[m
+ [m
+     if (browser) {[m
+[31m-      const imagesToPreload = ['/logo.svg', '/logo-white.svg', '/placeholder.jpg'];[m
+[32m+[m[32m      const imagesToPreload = [[m
+[32m+[m[32m        '/logo.svg',[m[41m [m
+[32m+[m[32m        '/logo-white.svg',[m[41m [m
+[32m+[m[32m        '/placeholder.jpg',[m[41m [m
+[32m+[m[32m        '/logo/Logo Moov\'.png',[m
+[32m+[m[32m        '/logo/Logo Moov\'-full.png'[m
+[32m+[m[32m      ];[m
+       imagesToPreload.forEach(src => {[m
+         const img = new Image();[m
+         img.src = src;[m
+       });[m
+     }[m
+     [m
+[31m-    // Charger les données de pas[m
+[31m-    await loadUserSteps();[m
+[31m-    [m
+[31m-    // Obtenir la position de l'utilisateur[m
+[31m-    await getUserLocation();[m
+[31m-    [m
+[31m-    // Charger les recommandations et les POIs à proximité[m
+[31m-    await Promise.all([[m
+[31m-      loadRecommendations(),[m
+[31m-      loadNearbyPOIs()[m
+[31m-    ]);[m
+[32m+[m[32m    // Charger les données uniquement si l'utilisateur est connecté[m
+[32m+[m[32m    if ($currentUser) {[m
+[32m+[m[32m      // Charger les données de pas[m
+[32m+[m[32m      await loadUserSteps();[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Obtenir la position de l'utilisateur[m
+[32m+[m[32m      await getUserLocation();[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Charger les recommandations et les POIs à proximité[m
+[32m+[m[32m      await Promise.all([[m
+[32m+[m[32m        loadRecommendations(),[m
+[32m+[m[32m        loadNearbyPOIs()[m
+[32m+[m[32m      ]);[m
+[32m+[m[32m    }[m
+   });[m
+ </script>[m
+ [m
+[36m@@ -215,7 +270,25 @@[m
+ [m
+ <!-- Page d'accueil principale -->[m
+ <div class="min-h-screen bg-white">[m
+[31m-  {#if loading}[m
+[32m+[m[32m  {#if showInitialSplash}[m
+[32m+[m[32m    <!-- Premier écran de splash (M) - sans animation -->[m
+[32m+[m[32m    <div class="min-h-screen flex flex-col items-center justify-center bg-[#3643BA]">[m
+[32m+[m[32m      <div class="flex flex-col items-center">[m
+[32m+[m[32m        <img src="/logo/Logo Moov'.png" alt="M" class="w-[259px] h-[56.88px] mb-4" />[

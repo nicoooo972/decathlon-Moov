@@ -254,31 +254,37 @@
             </p>
             
             <div class="space-y-4">
-              <div 
-                class="border rounded-lg p-4 cursor-pointer transition-colors duration-200 flex items-center"
+              <button 
+                type="button"
+                class="w-full border rounded-lg p-4 cursor-pointer transition-colors duration-200 flex items-center"
                 class:border-[#0082C3]={role === 'parent'}
-                class:bg-blue-50={role === 'parent'}
-                on:click={() => role = 'parent'}
+                on:click={() => (role = 'parent')}
+                on:keydown={e => e.key === 'Enter' && (role = 'parent')}
+                role="radio"
+                aria-checked={role === 'parent'}
               >
-                <span class="material-icons text-2xl mr-3">family_restroom</span>
+                <img src="/icons/parent.svg" alt="" class="w-8 h-8 mr-4" />
                 <div>
-                  <h4 class="font-medium">Parent</h4>
+                  <h3 class="font-medium">Parent</h3>
                   <p class="text-sm text-gray-500">Je cherche des activités pour ma famille</p>
                 </div>
-              </div>
+              </button>
               
-              <div 
-                class="border rounded-lg p-4 cursor-pointer transition-colors duration-200 flex items-center"
+              <button 
+                type="button"
+                class="w-full border rounded-lg p-4 cursor-pointer transition-colors duration-200 flex items-center"
                 class:border-[#0082C3]={role === 'enfant'}
-                class:bg-blue-50={role === 'enfant'}
-                on:click={() => role = 'enfant'}
+                on:click={() => (role = 'enfant')}
+                on:keydown={e => e.key === 'Enter' && (role = 'enfant')}
+                role="radio"
+                aria-checked={role === 'enfant'}
               >
-                <span class="material-icons text-2xl mr-3">person</span>
+                <img src="/icons/child.svg" alt="" class="w-8 h-8 mr-4" />
                 <div>
-                  <h4 class="font-medium">Individuel</h4>
-                  <p class="text-sm text-gray-500">Je cherche des activités pour moi</p>
+                  <h3 class="font-medium">Enfant</h3>
+                  <p class="text-sm text-gray-500">Je veux explorer avec mes parents</p>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
           
@@ -342,15 +348,18 @@
             
             <div class="grid grid-cols-2 gap-4">
               {#each activityOptions as option}
-                <div 
+                <button 
+                  type="button"
                   class="border rounded-lg p-4 cursor-pointer transition-colors duration-200 flex flex-col items-center justify-center text-center"
                   class:border-[#0082C3]={activityPreferences.includes(option.value)}
-                  class:bg-blue-50={activityPreferences.includes(option.value)}
                   on:click={() => toggleActivityPreference(option.value)}
+                  on:keydown={e => e.key === 'Enter' && toggleActivityPreference(option.value)}
+                  role="checkbox"
+                  aria-checked={activityPreferences.includes(option.value)}
                 >
-                  <span class="material-icons text-3xl mb-2">{option.icon}</span>
-                  <h4 class="font-medium">{option.label}</h4>
-                </div>
+                  <img src={option.icon} alt="" class="w-12 h-12 mb-2" />
+                  <h3 class="font-medium">{option.label}</h3>
+                </button>
               {/each}
             </div>
           </div>
@@ -416,20 +425,20 @@
             
             <div class="space-y-3">
               {#each ageGroupOptions as option}
-                <div 
-                  class="border rounded-lg p-3 cursor-pointer transition-colors duration-200 flex items-center"
+                <button 
+                  type="button"
+                  class="w-full border rounded-lg p-3 cursor-pointer transition-colors duration-200 flex items-center"
                   class:border-[#0082C3]={ageGroups.includes(option.value)}
-                  class:bg-blue-50={ageGroups.includes(option.value)}
                   on:click={() => toggleAgeGroup(option.value)}
+                  on:keydown={e => e.key === 'Enter' && toggleAgeGroup(option.value)}
+                  role="checkbox"
+                  aria-checked={ageGroups.includes(option.value)}
                 >
-                  <input 
-                    type="checkbox" 
-                    checked={ageGroups.includes(option.value)} 
-                    class="mr-3 h-5 w-5 text-[#0082C3] focus:ring-[#0082C3]"
-                    on:change={() => toggleAgeGroup(option.value)}
-                  />
-                  <span>{option.label}</span>
-                </div>
+                  <div class="flex-1">
+                    <h3 class="font-medium">{option.label}</h3>
+                    <p class="text-sm text-gray-500">{option.description}</p>
+                  </div>
+                </button>
               {/each}
             </div>
           </div>
@@ -491,16 +500,16 @@
             <h3 class="text-lg font-medium text-gray-900">Distance et accessibilité</h3>
             
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="maxDistance" class="block text-sm font-medium text-gray-700 mb-1">
                 Distance maximale (en km): {maxDistanceKm}
               </label>
               <input 
                 type="range" 
+                id="maxDistance"
                 min="1" 
                 max="20" 
-                step="1" 
                 bind:value={maxDistanceKm}
-                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                class="w-full"
               />
               <div class="flex justify-between text-xs text-gray-500 mt-1">
                 <span>1 km</span>

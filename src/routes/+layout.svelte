@@ -12,7 +12,7 @@
 	import { supabase } from '$lib/supabase';
 	
 	// Récupérer les données de session du layout.ts
-	export let data;
+	export const data = {};
 	
 	// Déterminer si la page actuelle est une page d'authentification
 	$: isAuthPage = $page.url.pathname.startsWith('/login') || $page.url.pathname.startsWith('/register');
